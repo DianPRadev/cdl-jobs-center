@@ -89,7 +89,7 @@ const Drivers = () => {
     localStorage.setItem(favoritesKey, JSON.stringify(favorites));
   }, [favorites, favoritesKey]);
 
-  const { data: drivers = [], isLoading, isError, error } = useQuery({
+  const { data: drivers = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["driver-directory"],
     enabled: !!user && user.role === "company",
     queryFn: async () => {
@@ -291,8 +291,11 @@ const Drivers = () => {
           {isLoading ? (
             <div className="px-5 py-12 flex justify-center"><Spinner /></div>
           ) : isError ? (
-            <div className="px-5 py-12 text-center text-destructive text-sm">
-              {(error as Error).message || "Failed to load drivers."}
+            <div className="px-5 py-12 text-center">
+              <p className="text-sm text-destructive mb-3">
+                {(error as Error).message || "Failed to load drivers."}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>Try again</Button>
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState

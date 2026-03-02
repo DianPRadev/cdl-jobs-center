@@ -50,7 +50,7 @@ const Jobs = () => {
   usePageTitle("Browse Jobs");
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { jobs: allActiveJobs, error: jobsError } = useActiveJobs();
+  const { jobs: allActiveJobs, error: jobsError, refetch: refetchJobs } = useActiveJobs();
   const driverId = user?.role === "driver" ? user.id : "";
   const { savedIds, isSaved, toggle } = useSavedJobs(driverId);
   const { data: matchScoreMap } = useDriverAllJobMatches(user?.role === "driver" ? user.id : undefined);
@@ -448,7 +448,8 @@ const Jobs = () => {
               </>
             ) : jobsError ? (
               <div className="border border-destructive/30 bg-destructive/5 p-12 text-center rounded-lg">
-                <p className="text-destructive font-medium">Failed to load jobs. Please try again later.</p>
+                <p className="text-destructive font-medium mb-3">Failed to load jobs. Please try again later.</p>
+                <Button variant="outline" size="sm" onClick={() => refetchJobs()}>Try again</Button>
               </div>
             ) : (
               <div className="border border-border bg-card p-12 text-center">

@@ -25,7 +25,7 @@ function rowToJob(row: Record<string, any>): Job {
 
 // ── Public listing — all Active jobs ─────────────────────────────────────────
 export function useActiveJobs() {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["active-jobs"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -38,7 +38,7 @@ export function useActiveJobs() {
     },
     staleTime: 60_000,
   });
-  return { jobs: data ?? [], isLoading, error };
+  return { jobs: data ?? [], isLoading, error, refetch };
 }
 
 // ── Single job by ID ──────────────────────────────────────────────────────────
