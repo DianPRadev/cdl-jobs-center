@@ -12,6 +12,10 @@ let openSelectCount = 0;
 // which blocks the native scroll, but programmatic scrollTop changes
 // bypass preventDefault() entirely.
 function forcePageScroll(e: WheelEvent) {
+  // Don't force page scroll if the user is scrolling inside the Select dropdown
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("[data-radix-select-viewport]")) return;
+
   document.documentElement.scrollTop += e.deltaY;
   document.documentElement.scrollLeft += e.deltaX;
 }

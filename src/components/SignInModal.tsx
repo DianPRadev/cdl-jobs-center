@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, Mail, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { useAuth } from "@/context/auth";
 import { supabase } from "@/lib/supabase";
 import { friendlySignInError } from "@/lib/authErrorMessages";
 import { getPasswordStrength, type PasswordStrengthLevel } from "@/lib/passwordStrength";
-import { DRIVER_INTERESTS, DRIVER_NEXT_JOB, COMPANY_GOALS } from "@/data/constants";
+import { US_STATES, DRIVER_INTERESTS, DRIVER_NEXT_JOB, COMPANY_GOALS } from "@/data/constants";
 
 type View = "login" | "rules" | "register" | "forgot" | "confirm-email";
 
@@ -33,7 +33,24 @@ If you violate the rules you may be given a warning. In some cases, you may be b
 Insulting administrators and moderators is also punishable by a ban — Respect other people's labor.`;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ZIP_RE = /^\d{5}(-\d{4})?$/;
 
+const REG_DRAFT_KEY = "cdl-reg-draft";
+
+function loadRegDraft(): Record<string, string> {
+  try {
+    const raw = sessionStorage.getItem(REG_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveRegDraft(fields: Record<string, string>) {
+  sessionStorage.setItem(REG_DRAFT_KEY, JSON.stringify(fields));
+}
+
+function clearRegDraft() {
+  sessionStorage.removeItem(REG_DRAFT_KEY);
+}
 
 interface SignInModalProps {
   onClose: () => void;
@@ -112,32 +129,48 @@ export function SignInModal({ onClose }: SignInModalProps) {
   const [loginPassword, setLoginPassword] = useState("");
   const [resetEmail, setResetEmail] = useState("");
 
-  // Shared register state
-  const [role, setRole] = useState<"driver" | "company">("driver");
-  const [regEmail, setRegEmail] = useState("");
+  // Shared register state — hydrate from sessionStorage draft
+  const [draft] = useState(loadRegDraft);
+  const [role, setRole] = useState<"driver" | "company">((draft.role as "driver" | "company") || "driver");
+  const [regEmail, setRegEmail] = useState(draft.regEmail || "");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
   const passwordsDoNotMatch = regConfirm.length > 0 && regPassword !== regConfirm;
+  const [zipError, setZipError] = useState("");
 
   // Driver-specific
-  const [regUsername, setRegUsername] = useState("");
-  const [driverName, setDriverName] = useState("");
-  const [homeAddress, setHomeAddress] = useState("");
-  const [zipCode, setZipCode] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
-  const [cdlNumber, setCdlNumber] = useState("");
-  const [interestedIn, setInterestedIn] = useState<string>(DRIVER_INTERESTS[0]);
-  const [nextJobWant, setNextJobWant] = useState<string>(DRIVER_NEXT_JOB[0]);
-  const [hasAccidents, setHasAccidents] = useState("No");
-  const [wantsContact, setWantsContact] = useState("Yes");
+  const [regUsername, setRegUsername] = useState(draft.regUsername || "");
+  const [driverName, setDriverName] = useState(draft.driverName || "");
+  const [homeAddress, setHomeAddress] = useState(draft.homeAddress || "");
+  const [zipCode, setZipCode] = useState(draft.zipCode || "");
+  const [driverPhone, setDriverPhone] = useState(draft.driverPhone || "");
+  const [cdlNumber, setCdlNumber] = useState(draft.cdlNumber || "");
+  const [interestedIn, setInterestedIn] = useState<string>(draft.interestedIn || DRIVER_INTERESTS[0]);
+  const [nextJobWant, setNextJobWant] = useState<string>(draft.nextJobWant || DRIVER_NEXT_JOB[0]);
+  const [hasAccidents, setHasAccidents] = useState(draft.hasAccidents || "No");
+  const [wantsContact, setWantsContact] = useState(draft.wantsContact || "Yes");
 
   // Company-specific
-  const [contactName, setContactName] = useState("");
-  const [contactTitle, setContactTitle] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [companyAddress, setCompanyAddress] = useState("");
-  const [companyPhone, setCompanyPhone] = useState("");
-  const [companyGoal, setCompanyGoal] = useState<string>(COMPANY_GOALS[0]);
+  const [contactName, setContactName] = useState(draft.contactName || "");
+  const [contactTitle, setContactTitle] = useState(draft.contactTitle || "");
+  const [companyName, setCompanyName] = useState(draft.companyName || "");
+  const [companyAddress, setCompanyAddress] = useState(draft.companyAddress || "");
+  const [companyPhone, setCompanyPhone] = useState(draft.companyPhone || "");
+  const [companyState, setCompanyState] = useState(draft.companyState || "");
+  const [companyGoal, setCompanyGoal] = useState<string>(draft.companyGoal || COMPANY_GOALS[0]);
+
+  // Persist registration fields to sessionStorage on change
+  const saveDraft = useCallback(() => {
+    saveRegDraft({
+      role, regEmail, regUsername, driverName, homeAddress, zipCode,
+      driverPhone, cdlNumber, interestedIn, nextJobWant, hasAccidents, wantsContact,
+      contactName, contactTitle, companyName, companyAddress, companyPhone, companyState, companyGoal,
+    });
+  }, [role, regEmail, regUsername, driverName, homeAddress, zipCode,
+      driverPhone, cdlNumber, interestedIn, nextJobWant, hasAccidents, wantsContact,
+      contactName, contactTitle, companyName, companyAddress, companyPhone, companyState, companyGoal]);
+
+  useEffect(() => { saveDraft(); }, [saveDraft]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,6 +223,12 @@ export function SignInModal({ onClose }: SignInModalProps) {
       toast.error("Passwords do not match.");
       return;
     }
+    if (zipCode && !ZIP_RE.test(zipCode)) {
+      setZipError("Enter a valid US zip code (e.g. 33304).");
+      toast.error("Enter a valid US zip code.");
+      return;
+    }
+    setZipError("");
     setSubmitting(true);
     const timeout = setTimeout(() => {
       setSubmitting(false);
@@ -228,9 +267,11 @@ export function SignInModal({ onClose }: SignInModalProps) {
             });
           }
         } catch { /* deferred population in AuthContext handles this */ }
+        clearRegDraft();
         toast.success("Registration successful!");
         onClose();
       } else {
+        clearRegDraft();
         setView("confirm-email");
       }
     } catch (err) {
@@ -270,6 +311,7 @@ export function SignInModal({ onClose }: SignInModalProps) {
         company_name: companyName,
         company_phone: companyPhone || "",
         company_address: companyAddress || "",
+        company_state: companyState || "",
         company_email: regEmail,
         contact_name: contactName || "",
         contact_title: contactTitle || "",
@@ -292,9 +334,11 @@ export function SignInModal({ onClose }: SignInModalProps) {
             company_goal: companyGoal || "",
           });
         } catch { /* deferred population in AuthContext handles this */ }
+        clearRegDraft();
         toast.success("Registration successful!");
         onClose();
       } else {
+        clearRegDraft();
         setView("confirm-email");
       }
     } catch (err) {
@@ -538,9 +582,12 @@ export function SignInModal({ onClose }: SignInModalProps) {
                   name="zipCode"
                   aria-label="Zip code"
                   value={zipCode}
-                  onChange={(e) => setZipCode(e.target.value)}
+                  onChange={(e) => { setZipCode(e.target.value); setZipError(""); }}
                   autoComplete="postal-code"
+                  aria-invalid={!!zipError}
+                  className={zipError ? "border-destructive focus-visible:ring-destructive" : ""}
                 />
+                {zipError && <p className="text-xs text-destructive -mt-2">{zipError}</p>}
                 <Input
                   id="reg-driverPhone"
                   placeholder="Phone Number"
@@ -682,6 +729,19 @@ export function SignInModal({ onClose }: SignInModalProps) {
                   onChange={(e) => setCompanyAddress(e.target.value)}
                   autoComplete="street-address"
                 />
+                <div>
+                  <label className="text-sm text-primary font-medium block mb-1">State</label>
+                  <Select value={companyState} onValueChange={setCompanyState} name="companyState">
+                    <SelectTrigger id="co-companyState" className="w-full" aria-label="Company state">
+                      <SelectValue placeholder="Select state" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {US_STATES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Input
                   id="co-companyPhone"
                   placeholder="Company phone number"

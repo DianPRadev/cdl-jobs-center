@@ -323,9 +323,12 @@ export function useToggleCompanyVerified() {
         .eq("id", params.companyId);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       qc.invalidateQueries({ queryKey: ["companies-directory-v2"] });
+      qc.invalidateQueries({ queryKey: ["company-profile", vars.companyId] });
+      qc.invalidateQueries({ queryKey: ["company-logo", vars.companyId] });
+      qc.invalidateQueries({ queryKey: ["verification-requests"] });
     },
   });
 }

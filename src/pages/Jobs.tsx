@@ -14,6 +14,7 @@ import { useDriverProfile, type DriverProfile } from "@/hooks/useDriverProfile";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import type { Job } from "@/data/jobs";
 import { toast } from "sonner";
+import { Spinner } from "@/components/ui/Spinner";
 
 const urlTypeMap: Record<string, string> = {
   "dry-van": "Dry Van",
@@ -50,7 +51,7 @@ const Jobs = () => {
   usePageTitle("Browse Jobs");
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { jobs: allActiveJobs, error: jobsError, refetch: refetchJobs } = useActiveJobs();
+  const { jobs: allActiveJobs, isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useActiveJobs();
   const driverId = user?.role === "driver" ? user.id : "";
   const { savedIds, isSaved, toggle } = useSavedJobs(driverId);
   const { data: matchScoreMap } = useDriverAllJobMatches(user?.role === "driver" ? user.id : undefined);
@@ -200,7 +201,7 @@ const Jobs = () => {
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className="flex flex-col lg:flex-row gap-6 items-start overflow-hidden">
           {/* Sidebar filter */}
           <div className="w-full lg:w-72 shrink-0 border border-border">
             <div className="bg-foreground text-background dark:bg-muted dark:text-foreground px-4 py-3 border-l-4 border-primary">
@@ -315,12 +316,14 @@ const Jobs = () => {
 
           {/* Job listings */}
           <div className="flex-1 space-y-4">
-            {paginated.length > 0 ? (
+            {jobsLoading ? (
+              <div className="flex justify-center py-12"><Spinner /></div>
+            ) : paginated.length > 0 ? (
               <>
                 {paginated.map((job) => {
                   const saved = savedIds.includes(job.id);
                   return (
-                    <div key={job.id} className="border border-border bg-card p-5 flex flex-col sm:flex-row gap-4 transition-shadow hover:shadow-md hover:border-primary/30">
+                    <div key={job.id} className="border border-border bg-card p-5 flex flex-col sm:flex-row gap-4 transition-shadow hover:shadow-md hover:border-primary/30 overflow-hidden">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">

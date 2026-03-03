@@ -15,11 +15,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Spinner } from "@/components/ui/Spinner";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const JobDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { job, isLoading, isError } = useJobById(id);
+  const validId = id && UUID_RE.test(id);
+  const { job, isLoading, isError } = useJobById(validId ? id : undefined);
   const [applyOpen, setApplyOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const { data: matchScore } = useDriverJobMatchScore(user?.role === "driver" ? user.id : undefined, id);
@@ -57,11 +60,16 @@ const JobDetail = () => {
   });
 
   useEffect(() => {
+    if (!validId) {
+      toast.error("Job not found.");
+      navigate("/jobs", { replace: true });
+      return;
+    }
     if (!isLoading && !isError && !job) {
       toast.error("Job not found.");
-      navigate("/jobs");
+      navigate("/jobs", { replace: true });
     }
-  }, [job, isLoading, isError, navigate]);
+  }, [validId, job, isLoading, isError, navigate]);
 
   if (isLoading && !isError) {
     return (

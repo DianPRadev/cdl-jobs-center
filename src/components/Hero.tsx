@@ -40,7 +40,7 @@ const Hero = () => {
       <div className="absolute top-20 right-20 w-96 h-96 bg-primary/20 rounded-full blur-[120px] animate-float" />
 
       <div className="container mx-auto relative z-10 py-20">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(380px,520px)] xl:grid-cols-[minmax(0,1fr)_minmax(440px,620px)]">
           <div className="max-w-2xl">
             <div
               className="animate-hero-fade-up inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-6"
@@ -126,13 +126,13 @@ const Hero = () => {
           </div>
 
           <div
-            className="animate-hero-slide-left hidden lg:block justify-self-end w-full"
+            className="animate-hero-slide-left hidden lg:block justify-self-end w-full max-w-[620px] xl:max-w-[700px]"
             style={{ animationDelay: "0.25s" }}
           >
-            <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/20 p-2 backdrop-blur-sm shadow-xl lg:-translate-y-8 lg:-translate-x-14">
+            <div className="overflow-hidden rounded-2xl border border-border/40 bg-card/20 p-2 backdrop-blur-sm shadow-xl lg:-translate-y-4">
               <video
                 src={heroVideo}
-                className="h-[auto] w-full rounded-xl bg-black/30 object-contain"
+                className="w-full rounded-xl bg-black/30 object-contain aspect-video"
                 autoPlay
                 muted
                 loop

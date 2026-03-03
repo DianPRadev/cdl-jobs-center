@@ -1,6 +1,6 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,8 +13,9 @@ import { Link, useNavigationType } from "react-router-dom";
 import { useApplication } from "@/hooks/useApplication";
 import { useAuth } from "@/context/auth";
 import { useDriverProfile } from "@/hooks/useDriverProfile";
-import { useRefreshMyMatches, useDriverJobMatches } from "@/hooks/useMatchScores";
+import { useRefreshMyMatches, useDriverJobMatches, type DriverJobMatch } from "@/hooks/useMatchScores";
 import { useQueryClient } from "@tanstack/react-query";
+import { scoreJobsClientSide, type JobRow } from "@/lib/clientScoring";
 import { SignInModal } from "@/components/SignInModal";
 import { AIGenerationScreen } from "@/components/matching/AIGenerationScreen";
 import { MatchResultsReveal } from "@/components/matching/MatchResultsReveal";
@@ -115,6 +116,7 @@ const ApplyNow = () => {
   const { profile, saveProfile } = useDriverProfile(user?.id ?? "");
   const refreshMyMatches = useRefreshMyMatches(user?.id);
   const queryClient = useQueryClient();
+  const shouldValidateRestoredStep = useRef(navType === "POP");
 
   // Only restore step from sessionStorage on back-navigation (POP).
   // Clicking "Apply Now" link is a PUSH — always start fresh at step 1.
@@ -133,8 +135,16 @@ const ApplyNow = () => {
   // AI matching state
   const [matchesStartedAt, setMatchesStartedAt] = useState<number | null>(null);
   const [animationComplete, setAnimationComplete] = useState(false);
-  const [matchRefreshDone, setMatchRefreshDone] = useState(false); // true when edge function resolved or errored
+  const [matchRefreshDone, setMatchRefreshDone] = useState(false);
+  const [clientFallbackMatches, setClientFallbackMatches] = useState<DriverJobMatch[]>([]);
   const handleAnimationComplete = useCallback(() => setAnimationComplete(true), []);
+
+  // Fallback: force animation complete after 6s in case callback doesn't fire (mobile)
+  useEffect(() => {
+    if (step !== 4 || animationComplete) return;
+    const fallback = setTimeout(() => setAnimationComplete(true), 6000);
+    return () => clearTimeout(fallback);
+  }, [step, animationComplete]);
 
   // Persist step to sessionStorage
   useEffect(() => {
@@ -190,11 +200,19 @@ const ApplyNow = () => {
     { limit: 20, minScore: 0, excludeHidden: true },
   );
 
-  // If restored to step 5 but no matches exist (stale session), fall back to step 1
+  // Determine if matches are still computing (no fresh results since submission)
+  const isStillComputing = matchesStartedAt
+    ? !matches.some((m) => new Date(m.computedAt).getTime() > matchesStartedAt)
+    : false;
+
+  // If we restored from browser history to step 5 with no matches, fall back once.
+  // Do not keep forcing step 1 during a fresh search flow.
   useEffect(() => {
-    if (step === 5 && !matchesLoading && matches.length === 0 && !matchesStartedAt) {
+    if (!shouldValidateRestoredStep.current || matchesLoading) return;
+    if (step === 5 && matches.length === 0 && !matchesStartedAt) {
       setStep(1);
     }
+    shouldValidateRestoredStep.current = false;
   }, [step, matchesLoading, matches.length, matchesStartedAt]);
 
   // Reset matchesStartedAt when entering step 4 (prevents stale timestamps on back-navigation)
@@ -204,14 +222,51 @@ const ApplyNow = () => {
     }
   }, [step, matchesStartedAt]);
 
-  // Poll for fresh matches during step 4
+  // Poll for fresh matches during step 4 AND step 5 (while still computing)
   useEffect(() => {
-    if (step !== 4 || !user?.id) return;
+    if (!user?.id) return;
+    // Poll on step 4 always, or step 5 while results are still computing
+    const shouldPoll = step === 4 || (step === 5 && isStillComputing);
+    if (!shouldPoll) return;
     const interval = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: ["driver-matches", user.id] });
     }, 3000);
     return () => clearInterval(interval);
-  }, [step, user?.id, queryClient]);
+  }, [step, user?.id, queryClient, isStillComputing]);
+
+  // Hard timeout: if still no DB matches after 15s, compute client-side fallback
+  useEffect(() => {
+    if (step !== 5 || !isStillComputing || !matchesStartedAt) return;
+    const elapsed = Date.now() - matchesStartedAt;
+    const remaining = Math.max(0, 15000 - elapsed);
+    const timer = setTimeout(async () => {
+      try {
+        const { data: jobs } = await supabase
+          .from("jobs")
+          .select("id, title, company_name, company_id, location, pay, type, route_type, driver_type, team_driving, status")
+          .eq("status", "Active");
+        if (jobs && jobs.length > 0) {
+          // Fetch logos
+          const companyIds = [...new Set(jobs.map(j => j.company_id).filter(Boolean))] as string[];
+          const logoMap = new Map<string, string | null>();
+          if (companyIds.length > 0) {
+            const { data: logos } = await supabase.from("company_profiles").select("id, logo_url").in("id", companyIds);
+            for (const row of logos ?? []) logoMap.set(row.id, row.logo_url ?? null);
+          }
+          const jobRows: JobRow[] = jobs.map(j => ({ ...j, logo_url: logoMap.get(j.company_id) ?? null } as JobRow));
+          const scored = scoreJobsClientSide(
+            { driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route },
+            jobRows,
+          );
+          setClientFallbackMatches(scored.slice(0, 20));
+        }
+      } catch (err) {
+        console.error("Client-side scoring failed:", err);
+      }
+      setMatchesStartedAt(null); // stop "still computing"
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [step, isStillComputing, matchesStartedAt, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route]);
 
   // Transition from step 4 → 5 when animation complete
   useEffect(() => {
@@ -224,14 +279,36 @@ const ApplyNow = () => {
       return;
     }
 
-    // Edge function finished (success or error) with no matches — show empty state immediately
+    // Edge function finished (success or error) with no matches — run client-side scoring and transition
     if (matchRefreshDone) {
-      // One final refetch to catch any last-second results, then transition
       queryClient.invalidateQueries({ queryKey: ["driver-matches", user?.id] });
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
+        // If still no DB matches after final refetch, compute client-side
+        try {
+          const { data: jobs } = await supabase
+            .from("jobs")
+            .select("id, title, company_name, company_id, location, pay, type, route_type, driver_type, team_driving, status")
+            .eq("status", "Active");
+          if (jobs && jobs.length > 0) {
+            const companyIds = [...new Set(jobs.map(j => j.company_id).filter(Boolean))] as string[];
+            const logoMap = new Map<string, string | null>();
+            if (companyIds.length > 0) {
+              const { data: logos } = await supabase.from("company_profiles").select("id, logo_url").in("id", companyIds);
+              for (const row of logos ?? []) logoMap.set(row.id, row.logo_url ?? null);
+            }
+            const jobRows: JobRow[] = jobs.map(j => ({ ...j, logo_url: logoMap.get(j.company_id) ?? null } as JobRow));
+            const scored = scoreJobsClientSide(
+              { driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route },
+              jobRows,
+            );
+            setClientFallbackMatches(scored.slice(0, 20));
+          }
+        } catch (err) {
+          console.error("Client-side fallback scoring failed:", err);
+        }
         setStep(5);
         window.scrollTo({ top: 0, behavior: "smooth" });
-      }, 1000);
+      }, 1500);
       return () => clearTimeout(timer);
     }
 
@@ -247,7 +324,7 @@ const ApplyNow = () => {
       queryClient.invalidateQueries({ queryKey: ["driver-matches", user?.id] });
     }, 2000);
     return () => clearTimeout(timer);
-  }, [step, animationComplete, matchesStartedAt, matchRefreshDone, matches, queryClient, user?.id]);
+  }, [step, animationComplete, matchesStartedAt, matchRefreshDone, matches, queryClient, user?.id, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route]);
 
   // Pre-fill empty fields from driver profile (Supabase)
   useEffect(() => {
@@ -261,7 +338,6 @@ const ApplyNow = () => {
     setDriverType(prev => prev || profile.driverType);
     setLicenseState(prev => prev || profile.licenseState);
     setZipCode(prev => prev || profile.zipCode);
-    setDate(prev => prev || profile.dateOfBirth);
   }, [profile]);
 
   // Pre-fill email from auth user
@@ -389,12 +465,6 @@ const ApplyNow = () => {
     try {
       saveDraft();
 
-      // Fire match refresh in background — don't block form submission
-      setMatchRefreshDone(false);
-      refreshMyMatches.mutateAsync()
-        .then(() => setMatchRefreshDone(true))
-        .catch(() => setMatchRefreshDone(true));
-
       // Run profile save + application insert in parallel (both non-fatal)
       await Promise.all([
         // 1. Upsert driver profile
@@ -402,7 +472,7 @@ const ApplyNow = () => {
           firstName, lastName, phone, cdlNumber, driverType, licenseClass,
           yearsExp, licenseState, zipCode, dateOfBirth: date, about: notes,
           homeAddress: "", interestedIn: "", nextJobWant: "", hasAccidents: "", wantsContact: "",
-        }).catch((err) => { console.error("Profile save failed:", err); }),
+        }),
         // 2. Insert enrichment application (non-fatal)
         supabase.from("applications").insert({
           driver_id: user.id, company_id: null, job_id: null,
@@ -414,6 +484,16 @@ const ApplyNow = () => {
           notes, prefs, endorse, hauler, route, extra, pipeline_stage: "New",
         }).then(({ error }) => { if (error) console.error("Application insert failed:", error); }),
       ]);
+
+      // Fire match refresh after latest profile/application data is persisted.
+      setMatchRefreshDone(false);
+      void refreshMyMatches.mutateAsync()
+        .then(() => setMatchRefreshDone(true))
+        .catch((err) => {
+          console.error("Match refresh failed:", err);
+          toast.error("Could not refresh AI matches right now. Please try again.");
+          setMatchRefreshDone(true);
+        });
 
       // 4. Transition to AI generation screen
       setMatchesStartedAt(Date.now());
@@ -430,11 +510,6 @@ const ApplyNow = () => {
 
   // Check if profile has enough data for summary card
   const hasProfileData = firstName && lastName && email && cdlNumber;
-
-  // Determine if matches are still computing (no fresh results since submission)
-  const isStillComputing = matchesStartedAt
-    ? !matches.some((m) => new Date(m.computedAt).getTime() > matchesStartedAt)
-    : false;
 
   return (
     <div className="min-h-screen bg-background">
@@ -537,7 +612,7 @@ const ApplyNow = () => {
                     {editingProfile ? (
                       <Button type="button" variant="outline" onClick={() => setEditingProfile(false)}>Cancel editing</Button>
                     ) : <div />}
-                    <Button type="button" onClick={nextStep} className="px-8">
+                    <Button type="submit" className="px-8">
                       Next
                     </Button>
                   </div>
@@ -597,6 +672,7 @@ const ApplyNow = () => {
                       <Select value={licenseState} onValueChange={(v) => { setLicenseState(v); setErrors((p) => ({ ...p, licenseState: "" })); }} name="licenseState">
                         <SelectTrigger id="apply-licenseState" className={errors.licenseState ? "border-destructive" : ""}><SelectValue placeholder="Select state" /></SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="nationwide">Nationwide / Any State</SelectItem>
                           {US_STATES.map((s) => (
                             <SelectItem key={s} value={s}>{s}</SelectItem>
                           ))}
@@ -631,7 +707,7 @@ const ApplyNow = () => {
 
                   <div className="flex justify-between pt-4">
                     <Button type="button" variant="outline" onClick={prevStep}>Back</Button>
-                    <Button type="button" onClick={nextStep} className="px-8">Next</Button>
+                    <Button type="submit" className="px-8">Next</Button>
                   </div>
                 </div>
               </form>
@@ -735,31 +811,36 @@ const ApplyNow = () => {
             )}
 
             {/* ── STEP 5: Match Results ── */}
-            {step === 5 && (
-              <>
-                <MatchResultsReveal
-                  matches={matches}
-                  isStillComputing={isStillComputing}
-                />
-                <div className="flex justify-center mt-4">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      sessionStorage.removeItem(MATCH_STEP_KEY);
-                      setMatchesStartedAt(null);
-                      setAnimationComplete(false);
-                      setMatchRefreshDone(false);
-                      setStep(1);
-                    }}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-1.5" />
-                    Update Profile &amp; Search Again
-                  </Button>
-                </div>
-              </>
-            )}
+            {step === 5 && (() => {
+              // Use DB matches if available, otherwise fall back to client-scored matches
+              const displayMatches = matches.length > 0 ? matches : clientFallbackMatches;
+              return (
+                <>
+                  <MatchResultsReveal
+                    matches={displayMatches}
+                    isStillComputing={isStillComputing}
+                  />
+                  <div className="flex justify-center mt-4">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        sessionStorage.removeItem(MATCH_STEP_KEY);
+                        setMatchesStartedAt(null);
+                        setAnimationComplete(false);
+                        setMatchRefreshDone(false);
+                        setClientFallbackMatches([]);
+                        setStep(1);
+                      }}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1.5" />
+                      Update Profile &amp; Search Again
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
 
           </div>
         </div>

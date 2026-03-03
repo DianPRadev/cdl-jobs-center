@@ -1348,6 +1348,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                         .eq("company_id", user!.id);
                       if (!error) {
                         qc.setQueryData(appsKey, []);
+                        qc.invalidateQueries({ queryKey: appsKey });
                         toast.success("All applications cleared.");
                       } else {
                         toast.error("Failed to clear applications.");
@@ -2282,7 +2283,13 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
 
           const activeJobs = jobs.filter((j) => j.status === "Active");
 
-          return <AiMatchesContent
+          return <>
+            <div className="border border-border bg-blue-50/50 dark:bg-blue-950/20 p-4 mb-6 text-sm text-muted-foreground">
+              AI matches are generated automatically based on driver applications and your job postings.
+              Scores update as new drivers apply. Higher scores indicate a stronger fit based on experience,
+              license class, location, and preferences.
+            </div>
+            <AiMatchesContent
             userId={user!.id}
             activeJobs={activeJobs}
             aiJobFilter={aiJobFilter}
@@ -2292,7 +2299,8 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
             matchLimit={matchLimit}
             currentPlan={currentPlan}
             switchTab={switchTab}
-          />;
+          />
+          </>;
         })()}
 
         {/* ── Tab: Subscription ────────────────────────────────────────────── */}

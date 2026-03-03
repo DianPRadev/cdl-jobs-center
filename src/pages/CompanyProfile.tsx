@@ -8,6 +8,8 @@ import { Phone, MapPin, CheckCircle, ExternalLink, Mail, Building2, Briefcase, M
 import { useAuth } from "@/context/auth";
 import { ApplyModal } from "@/components/ApplyModal";
 import { SignInModal } from "@/components/SignInModal";
+import EasyApplyDialog from "@/components/EasyApplyDialog";
+import { Zap } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -35,10 +37,13 @@ interface JobRow {
   type: string;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const CompanyProfile = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const validId = id && UUID_RE.test(id);
   const [applyOpen, setApplyOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
 
@@ -54,7 +59,7 @@ const CompanyProfile = () => {
       if (error) throw error;
       return data as CompanyData | null;
     },
-    enabled: !!id,
+    enabled: !!validId,
   });
 
   // Check if current driver already applied to this company
@@ -70,7 +75,7 @@ const CompanyProfile = () => {
       if (error) return false;
       return (count ?? 0) > 0;
     },
-    enabled: !!isDriver && !!id,
+    enabled: !!isDriver && !!validId,
   });
 
   usePageTitle(company?.company_name ?? "Company Profile");
@@ -88,15 +93,20 @@ const CompanyProfile = () => {
       if (error) throw error;
       return (data ?? []) as JobRow[];
     },
-    enabled: !!id,
+    enabled: !!validId,
   });
 
   useEffect(() => {
+    if (!validId) {
+      toast.error("Company not found.");
+      navigate("/companies", { replace: true });
+      return;
+    }
     if (!isLoading && !isError && !company) {
       toast.error("Company not found.");
       navigate("/companies", { replace: true });
     }
-  }, [isLoading, isError, company, navigate]);
+  }, [validId, isLoading, isError, company, navigate]);
 
   if (isLoading && !isError) {
     return (
@@ -218,9 +228,22 @@ const CompanyProfile = () => {
                   Already Applied
                 </Button>
               ) : (
-                <Button onClick={handleApplyClick}>
-                  Submit an Application
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button onClick={handleApplyClick}>
+                    Submit an Application
+                  </Button>
+                  {user?.role === "driver" && (
+                    <EasyApplyDialog
+                      companyName={company.company_name}
+                      trigger={
+                        <Button variant="outline" size="sm" className="w-full">
+                          <Zap className="h-3.5 w-3.5 mr-1.5" />
+                          Easy Apply
+                        </Button>
+                      }
+                    />
+                  )}
+                </div>
               )}
             </div>
           </div>

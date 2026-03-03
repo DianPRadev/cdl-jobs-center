@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -145,10 +145,17 @@ function AdminDashboardInner() {
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectDialogRequestId, setRejectDialogRequestId] = useState<string | null>(null);
+  const [verificationSearch, setVerificationSearch] = useState("");
   const pendingVerifications = verificationRequests.filter((r) => r.status === "pending");
 
-  /* tab state */
-  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+  /* tab state — synced with URL so refresh preserves the tab */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as AdminTab | null;
+  const VALID_TABS: AdminTab[] = ["overview", "users", "subscriptions", "jobs", "leads", "matching", "verification"];
+  const activeTab: AdminTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview";
+  const setActiveTab = (tab: AdminTab) => {
+    setSearchParams(tab === "overview" ? {} : { tab }, { replace: true });
+  };
 
   /* users tab state */
   const [userSearch, setUserSearch] = useState("");
@@ -593,6 +600,21 @@ function AdminDashboardInner() {
               </span>
             </h2>
 
+            {/* Plan breakdown */}
+            {subscriptions.length > 0 && (() => {
+              const counts: Record<string, number> = {};
+              subscriptions.forEach((s) => { counts[s.plan] = (counts[s.plan] || 0) + 1; });
+              return (
+                <div className="flex flex-wrap gap-3 mb-4">
+                  {(Object.keys(PLANS) as Plan[]).map((p) => (
+                    <div key={p} className="border border-border bg-card px-4 py-2 text-sm">
+                      {PLANS[p].label}: <span className="font-semibold">{counts[p] || 0}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             {subscriptions.length === 0 ? (
               <div className="border border-border bg-card">
                 <EmptyState icon={CreditCard} heading="No companies registered yet." />
@@ -935,25 +957,40 @@ function AdminDashboardInner() {
         )}
 
         {/* ── TAB: Verification ──────────────────────────────────────── */}
-        {activeTab === "verification" && (
+        {activeTab === "verification" && (() => {
+          const filteredPending = verificationSearch.trim()
+            ? pendingVerifications.filter((r) =>
+                (r.companyName ?? "").toLowerCase().includes(verificationSearch.toLowerCase()) ||
+                (r.companyEmail ?? "").toLowerCase().includes(verificationSearch.toLowerCase())
+              )
+            : pendingVerifications;
+          return (
           <div className="space-y-6">
-            <h2 className="font-display font-semibold text-base">
-              Company Verification Requests
-            </h2>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="font-display font-semibold text-base">
+                Company Verification Requests
+              </h2>
+              <Input
+                placeholder="Search companies..."
+                value={verificationSearch}
+                onChange={(e) => setVerificationSearch(e.target.value)}
+                className="max-w-xs"
+              />
+            </div>
 
             {/* Pending */}
             <div className="border border-border bg-card">
               <div className="px-5 py-3 border-b border-border flex items-center gap-2">
                 <Clock className="h-4 w-4 text-amber-500" />
-                <h3 className="font-semibold text-sm">Pending ({pendingVerifications.length})</h3>
+                <h3 className="font-semibold text-sm">Pending ({filteredPending.length})</h3>
               </div>
-              {pendingVerifications.length === 0 ? (
+              {filteredPending.length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm text-muted-foreground">
                   No pending verification requests.
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {pendingVerifications.map((req) => {
+                  {filteredPending.map((req) => {
                     const isExpanded = expandedRequestId === req.id;
                     return (
                       <div key={req.id} className="px-5 py-4">
@@ -1059,7 +1096,8 @@ function AdminDashboardInner() {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Reject Verification Dialog */}
         <Dialog open={!!rejectDialogRequestId} onOpenChange={(open) => { if (!open) setRejectDialogRequestId(null); }}>

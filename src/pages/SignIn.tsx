@@ -71,6 +71,12 @@ const SignIn = () => {
 
   // Detect PASSWORD_RECOVERY event when user clicks reset link from email
   useEffect(() => {
+    // Check URL hash for recovery token (in case event fired before mount)
+    const hash = window.location.hash;
+    if (hash.includes("type=recovery")) {
+      setRecovering(true);
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         setRecovering(true);

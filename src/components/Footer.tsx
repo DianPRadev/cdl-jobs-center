@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import { Phone, MapPin, Facebook, Instagram } from "lucide-react";
+import { useAuth } from "@/context/auth";
 
 const Footer = () => {
+  const { user } = useAuth();
+  const isDriver = user?.role === "driver";
   return (
     <footer className="bg-secondary pt-16 pb-8">
       <div className="container mx-auto">
@@ -16,7 +19,8 @@ const Footer = () => {
                 { label: "Apply Now", path: "/apply" },
                 { label: "Company Directory", path: "/companies" },
                 { label: "Driver Dashboard", path: "/driver-dashboard" },
-                { label: "Pricing", path: "/pricing" },
+                { label: "Driver Sign In", path: "/signin" },
+                ...(!isDriver ? [{ label: "Pricing", path: "/pricing" }] : []),
               ].map((item) => (
                 <Link key={item.label} to={item.path} className="text-sm text-muted-foreground hover:text-primary transition-colors">
                   {item.label}

@@ -58,7 +58,7 @@ export function useDriverProfile(driverId: string) {
 
   const saveMutation = useMutation({
     mutationFn: async (profile: DriverProfile) => {
-      const { error } = await supabase.from("driver_profiles").upsert({
+      const fullPayload = {
         id: driverId,
         first_name: profile.firstName,
         last_name: profile.lastName,
@@ -77,8 +77,29 @@ export function useDriverProfile(driverId: string) {
         has_accidents: profile.hasAccidents,
         wants_contact: profile.wantsContact,
         updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("driver_profiles").upsert(fullPayload);
+      if (!error) return;
+
+      // Backward-compatible fallback for environments missing newer columns.
+      const { error: fallbackError } = await supabase.from("driver_profiles").upsert({
+        id: driverId,
+        first_name: profile.firstName,
+        last_name: profile.lastName,
+        phone: profile.phone,
+        cdl_number: profile.cdlNumber,
+        driver_type: profile.driverType,
+        license_class: profile.licenseClass,
+        years_exp: profile.yearsExp,
+        license_state: profile.licenseState,
+        zip_code: profile.zipCode,
+        date_of_birth: profile.dateOfBirth,
+        about: profile.about,
+        updated_at: new Date().toISOString(),
       });
-      if (error) throw error;
+
+      if (fallbackError) throw fallbackError;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
   });

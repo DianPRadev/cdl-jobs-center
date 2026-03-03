@@ -773,7 +773,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   </div>
                 </div>
 
-                {aiMatchesLoading && !aiMatchesError ? (
+                {(aiMatchesLoading && !aiMatchesError) ? (
                   <div className="space-y-4">
                     {[1, 2, 3].map((item) => (
                       <div key={`ai-skeleton-${item}`} className="h-52 animate-pulse rounded-xl border border-border bg-card" />
@@ -1147,9 +1147,10 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                 </div>
               </div>
 
+              <div className="flex items-center gap-3 ml-auto">
               <Button
                 onClick={handleSaveProfile}
-                disabled={profileSaveStatus === "saving"}
+                disabled={profileSaveStatus === "saving" || !hasUnsavedChanges && isProfileSaved}
                 className={isProfileSaved ? "px-6 bg-green-600 text-white hover:bg-green-600 focus-visible:ring-green-600" : "px-6"}
               >
                 {profileSaveStatus === "saving" ? (
@@ -1166,6 +1167,10 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   "Save Profile"
                 )}
               </Button>
+              {hasUnsavedChanges && (
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">Unsaved changes</span>
+              )}
+              </div>
             </div>
             <NotificationPreferences userId={user!.id} role="driver" />
           </div>

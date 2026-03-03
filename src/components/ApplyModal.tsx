@@ -103,7 +103,6 @@ export function ApplyModal({ companyName, companyId, jobId, jobTitle, onClose }:
     setDriverType(prev => prev || profile.driverType);
     setLicenseState(prev => prev || profile.licenseState);
     setZipCode(prev => prev || profile.zipCode);
-    setDate(prev => prev || profile.dateOfBirth);
   }, [profile]);
 
   // Pre-fill email from auth user

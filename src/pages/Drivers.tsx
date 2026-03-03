@@ -56,7 +56,7 @@ type DriverRow = {
 
 const Drivers = () => {
   usePageTitle("Browse CDL Drivers");
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [classFilter, setClassFilter] = useState("All");
@@ -147,6 +147,18 @@ const Drivers = () => {
     if (stateFilter !== "All" && driver.state !== stateFilter) return false;
     return true;
   });
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container mx-auto py-8 max-w-3xl">
+          <div className="flex justify-center py-20"><Spinner /></div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!user || user.role !== "company") {
     return (

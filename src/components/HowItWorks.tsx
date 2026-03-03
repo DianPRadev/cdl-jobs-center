@@ -77,7 +77,7 @@ const HowItWorks = () => {
               className="relative group"
             >
               <div className="glass rounded-2xl p-8 h-full hover:border-primary/30 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
-                <span className="font-display text-6xl font-bold text-primary/10 absolute top-4 right-6">
+                <span className="font-display text-6xl font-bold text-primary/10 dark:text-primary/25 absolute top-4 right-6">
                   {step.step}
                 </span>
                 <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:bg-primary/20 transition-colors">

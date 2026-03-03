@@ -209,6 +209,7 @@ const Navbar = () => {
   const [signInOpen, setSignInOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { isDark, toggle } = useTheme();
@@ -254,10 +255,31 @@ const Navbar = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Close mobile menu on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setJobsMobileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen]);
+
+  const [signingOut, setSigningOut] = useState(false);
   const confirmSignOut = async () => {
-    setSignOutOpen(false);
-    await signOut();
-    navigate("/");
+    setSigningOut(true);
+    try {
+      await signOut();
+      setSignOutOpen(false);
+      navigate("/");
+    } catch {
+      toast.error("Sign out failed. Please try again.");
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   return (
@@ -286,7 +308,7 @@ const Navbar = () => {
       </div>
 
       {/* Main nav */}
-      <nav className="sticky top-0 z-50 glass border-b border-border/50">
+      <nav ref={mobileMenuRef} className="sticky top-0 z-50 glass border-b border-border/50">
         <div className="container mx-auto flex items-center justify-between py-4">
           <Link
             to="/"
@@ -361,6 +383,30 @@ const Navbar = () => {
                             {item.name}
                           </Link>
                         ))}
+                        {effectiveRole === "driver" && (
+                          <>
+                            <div className="border-t border-border my-1" />
+                            <Link
+                              to="/driver-dashboard?tab=saved"
+                              onClick={() => setJobsDropdownOpen(false)}
+                              className="block px-4 py-2 text-sm text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                            >
+                              Saved Jobs
+                            </Link>
+                          </>
+                        )}
+                        {effectiveRole === "company" && (
+                          <>
+                            <div className="border-t border-border my-1" />
+                            <Link
+                              to="/dashboard?tab=jobs"
+                              onClick={() => setJobsDropdownOpen(false)}
+                              className="block px-4 py-2 text-sm text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                            >
+                              Post a Job
+                            </Link>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -540,7 +586,7 @@ const Navbar = () => {
 
         {/* Mobile menu */}
         {isOpen && (
-          <div className="animate-mobile-menu lg:hidden overflow-hidden border-t border-border/50">
+          <div className="animate-mobile-menu lg:hidden overflow-y-auto max-h-[80vh] border-t border-border/50">
             <div className="container mx-auto py-4 flex flex-col gap-2">
               {navLinks
                 .filter(
@@ -588,6 +634,30 @@ const Navbar = () => {
                                 {item.name}
                               </Link>
                             ))}
+                            {effectiveRole === "driver" && (
+                              <>
+                                <div className="border-t border-border my-1" />
+                                <Link
+                                  to="/driver-dashboard?tab=saved"
+                                  onClick={() => { setIsOpen(false); setJobsMobileOpen(false); }}
+                                  className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                                >
+                                  Saved Jobs
+                                </Link>
+                              </>
+                            )}
+                            {effectiveRole === "company" && (
+                              <>
+                                <div className="border-t border-border my-1" />
+                                <Link
+                                  to="/dashboard?tab=jobs"
+                                  onClick={() => { setIsOpen(false); setJobsMobileOpen(false); }}
+                                  className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                                >
+                                  Post a Job
+                                </Link>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}
@@ -719,7 +789,7 @@ const Navbar = () => {
         </Suspense>
       )}
 
-      <Dialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+      <Dialog open={signOutOpen} onOpenChange={(open) => { if (!signingOut) setSignOutOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Sign out</DialogTitle>
@@ -728,11 +798,11 @@ const Navbar = () => {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSignOutOpen(false)}>
+            <Button variant="outline" onClick={() => setSignOutOpen(false)} disabled={signingOut}>
               Cancel
             </Button>
-            <Button onClick={confirmSignOut}>
-              Sign Out
+            <Button onClick={confirmSignOut} disabled={signingOut}>
+              {signingOut ? "Signing out..." : "Sign Out"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -5,6 +5,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   useNotifications,
   useUnreadNotificationCount,
   useMarkNotificationsRead,
@@ -117,15 +128,32 @@ export function NotificationCenter({ userId, role }: NotificationCenterProps) {
                     Mark all read
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => clearAll.mutate()}
-                  disabled={clearAll.isPending || markAllRead.isPending}
-                >
-                  {clearAll.isPending ? "Clearing..." : "Clear all"}
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                      disabled={clearAll.isPending || markAllRead.isPending}
+                    >
+                      {clearAll.isPending ? "Clearing..." : "Clear all"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear all notifications?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently remove all your notifications. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => clearAll.mutate()}>
+                        Clear all
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </>
             )}
             <button
