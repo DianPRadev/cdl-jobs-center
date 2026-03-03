@@ -444,8 +444,9 @@ export function useCompanyDriverMatches(
     queryFn: async () => {
       let query = supabase
         .from("company_driver_match_scores")
-        .select("*")
+        .select("*, jobs!inner(status)")
         .eq("company_id", companyId!)
+        .eq("jobs.status", "Active")
         .order("overall_score", { ascending: false });
 
       if (opts.jobId) {
@@ -454,7 +455,10 @@ export function useCompanyDriverMatches(
       if (opts.source) {
         query = query.eq("candidate_source", opts.source);
       }
-      if (opts.limit) {
+      // When no jobId filter, the same person appears once per job they match against.
+      // We need ALL rows to deduplicate properly, so only apply SQL limit when
+      // viewing a specific job (no dedup needed in that case).
+      if (opts.limit && opts.jobId) {
         query = query.limit(opts.limit);
       }
 
@@ -462,12 +466,20 @@ export function useCompanyDriverMatches(
       if (error) throw error;
       if (!scores || scores.length === 0) return [];
 
-      const appIds = scores
-        .filter((s) => s.candidate_source === "application")
-        .map((s) => s.candidate_id);
-      const leadIds = scores
-        .filter((s) => s.candidate_source === "lead")
-        .map((s) => s.candidate_id);
+      const appIds = [
+        ...new Set(
+          scores
+            .filter((s) => s.candidate_source === "application")
+            .map((s) => s.candidate_id),
+        ),
+      ];
+      const leadIds = [
+        ...new Set(
+          scores
+            .filter((s) => s.candidate_source === "lead")
+            .map((s) => s.candidate_id),
+        ),
+      ];
 
       const candidateMap = new Map<string, Record<string, unknown>>();
 
@@ -488,6 +500,11 @@ export function useCompanyDriverMatches(
           : Promise.resolve({ data: [] }),
       ]);
 
+      const appsError = (appsResult as { error?: { message?: string } | null }).error;
+      if (appsError) throw new Error(appsError.message || "Failed to load application candidates");
+      const leadsError = (leadsResult as { error?: { message?: string } | null }).error;
+      if (leadsError) throw new Error(leadsError.message || "Failed to load lead candidates");
+
       for (const row of appsResult.data ?? []) {
         candidateMap.set(row.id, row as Record<string, unknown>);
       }
@@ -495,7 +512,7 @@ export function useCompanyDriverMatches(
         candidateMap.set(row.id, row as Record<string, unknown>);
       }
 
-      return (scores as Record<string, unknown>[]).map((row) =>
+      const allMatches = (scores as Record<string, unknown>[]).map((row) =>
         rowToCompanyDriverMatch(
           row,
           candidateMap.get(row.candidate_id as string) as
@@ -503,6 +520,27 @@ export function useCompanyDriverMatches(
             | undefined,
         ),
       );
+
+      // When showing "All Jobs", the same candidate can appear once per job.
+      // Deduplicate by actual person identity, keeping the highest score.
+      // For applications: candidateDriverId is the real driver user ID (candidateId is just the application row ID).
+      // For leads: candidateDriverId is null, so fall back to candidateId (lead ID, unique per person).
+      if (!opts.jobId) {
+        const seen = new Map<string, typeof allMatches[number]>();
+        for (const m of allMatches) {
+          const personKey = `${m.candidateDriverId ?? m.candidateId}:${m.candidateSource}`;
+          const existing = seen.get(personKey);
+          if (!existing || m.overallScore > existing.overallScore) {
+            seen.set(personKey, m);
+          }
+        }
+        const deduped = Array.from(seen.values()).sort((a, b) => b.overallScore - a.overallScore);
+        // Apply the subscription limit AFTER dedup so it counts unique people, not duplicate rows
+        if (opts.limit) return deduped.slice(0, opts.limit);
+        return deduped;
+      }
+
+      return allMatches;
     },
     enabled: !!companyId,
   });

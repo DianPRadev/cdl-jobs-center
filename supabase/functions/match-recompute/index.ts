@@ -154,6 +154,7 @@ Deno.serve(async (req) => {
 // ── Helpers ────────────────────────────────────────────────
 
 type SupabaseClient = ReturnType<typeof createClient>;
+type CandidateSource = "application" | "lead";
 
 const RULES_RAW_MAX = 90;
 const RULES_WEIGHT_MAX = 70;
@@ -344,6 +345,35 @@ function computeBehaviorScore(
   };
 }
 
+async function purgeCompanyJobMatches(
+  supabase: SupabaseClient,
+  jobId: string,
+) {
+  await supabase
+    .from("company_driver_match_scores")
+    .delete()
+    .eq("job_id", jobId);
+}
+
+async function purgeCompanyCandidateMatches(
+  supabase: SupabaseClient,
+  source: CandidateSource,
+  candidateId: string,
+  companyId?: string | null,
+) {
+  let query = supabase
+    .from("company_driver_match_scores")
+    .delete()
+    .eq("candidate_source", source)
+    .eq("candidate_id", candidateId);
+
+  if (companyId) {
+    query = query.eq("company_id", companyId);
+  }
+
+  await query;
+}
+
 async function processDriverProfile(
   supabase: SupabaseClient,
   driverId: string,
@@ -507,10 +537,16 @@ async function processJob(
     .select("*")
     .eq("id", jobId)
     .maybeSingle();
-  if (jobErr || !jobRow) return;
+  if (jobErr || !jobRow) {
+    await purgeCompanyJobMatches(supabase, jobId);
+    return;
+  }
 
   // Only score active jobs
-  if (jobRow.status !== "Active") return;
+  if (jobRow.status !== "Active") {
+    await purgeCompanyJobMatches(supabase, jobId);
+    return;
+  }
 
   const jobFeatures = extractJobFeatures(jobRow);
   const jobEmbedding = await getOrComputeEmbedding(
@@ -648,20 +684,26 @@ async function processApplication(
   companyId: string | null,
   embeddingProvider: EmbeddingProvider | null,
 ) {
-  if (!companyId) return;
-
   const { data: app } = await supabase
     .from("applications")
     .select("*")
     .eq("id", applicationId)
     .maybeSingle();
-  if (!app) return;
+  if (!app) {
+    await purgeCompanyCandidateMatches(supabase, "application", applicationId);
+    return;
+  }
+
+  await purgeCompanyCandidateMatches(supabase, "application", applicationId);
+
+  const effectiveCompanyId = (app.company_id as string | null) ?? companyId;
+  if (!effectiveCompanyId) return;
 
   // Fetch company's active jobs
   const { data: jobs } = await supabase
     .from("jobs")
     .select("*")
-    .eq("company_id", companyId)
+    .eq("company_id", effectiveCompanyId)
     .eq("status", "Active");
   if (!jobs || jobs.length === 0) return;
 
@@ -684,7 +726,7 @@ async function processApplication(
 
     await supabase.from("company_driver_match_scores").upsert(
       {
-        company_id: companyId,
+        company_id: effectiveCompanyId,
         job_id: jobRow.id,
         candidate_source: "application",
         candidate_id: applicationId,
@@ -712,19 +754,25 @@ async function processLead(
   companyId: string | null,
   embeddingProvider: EmbeddingProvider | null,
 ) {
-  if (!companyId) return;
-
   const { data: lead } = await supabase
     .from("leads")
     .select("*")
     .eq("id", leadId)
     .maybeSingle();
-  if (!lead) return;
+  if (!lead) {
+    await purgeCompanyCandidateMatches(supabase, "lead", leadId);
+    return;
+  }
+
+  await purgeCompanyCandidateMatches(supabase, "lead", leadId);
+
+  const effectiveCompanyId = (lead.company_id as string | null) ?? companyId;
+  if (!effectiveCompanyId) return;
 
   const { data: jobs } = await supabase
     .from("jobs")
     .select("*")
-    .eq("company_id", companyId)
+    .eq("company_id", effectiveCompanyId)
     .eq("status", "Active");
   if (!jobs || jobs.length === 0) return;
 
@@ -746,7 +794,7 @@ async function processLead(
 
     await supabase.from("company_driver_match_scores").upsert(
       {
-        company_id: companyId,
+        company_id: effectiveCompanyId,
         job_id: jobRow.id,
         candidate_source: "lead",
         candidate_id: leadId,
