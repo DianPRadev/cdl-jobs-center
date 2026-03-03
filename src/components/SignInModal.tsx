@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { friendlySignInError } from "@/lib/authErrorMessages";
 import { getPasswordStrength, type PasswordStrengthLevel } from "@/lib/passwordStrength";
 import { US_STATES, DRIVER_INTERESTS, DRIVER_NEXT_JOB, COMPANY_GOALS } from "@/data/constants";
+import { SocialLoginButtons, OrDivider } from "@/components/SocialLoginButtons";
 
 type View = "login" | "rules" | "register" | "forgot" | "confirm-email";
 
@@ -372,7 +373,11 @@ export function SignInModal({ onClose }: SignInModalProps) {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <form onSubmit={handleLogin} className="px-5 py-5 space-y-3">
+            <div className="px-5 pt-5">
+              <SocialLoginButtons />
+              <OrDivider />
+            </div>
+            <form onSubmit={handleLogin} className="px-5 pb-5 space-y-3">
               <Input
                 id="login-email"
                 placeholder="Email"

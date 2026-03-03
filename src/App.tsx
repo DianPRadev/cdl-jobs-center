@@ -45,6 +45,8 @@ const TermsOfService = lazyWithRetry(() => import("./pages/TermsOfService"));
 const Pricing = lazyWithRetry(() => import("./pages/Pricing"));
 const AdminDashboard = lazyWithRetry(() => import("./pages/AdminDashboard"));
 const Verification = lazyWithRetry(() => import("./pages/Verification"));
+const AuthCallback = lazyWithRetry(() => import("./pages/AuthCallback"));
+const Onboarding = lazyWithRetry(() => import("./pages/Onboarding"));
 const NotFound = lazyWithRetry(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -88,6 +90,8 @@ const App = () => (
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
             <Route path="/signin" element={<SignIn />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="*" element={<NotFound />} />

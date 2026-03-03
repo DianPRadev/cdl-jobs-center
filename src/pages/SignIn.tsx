@@ -10,6 +10,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { supabase } from "@/lib/supabase";
 import { friendlySignInError } from "@/lib/authErrorMessages";
 import { getPasswordStrength, type PasswordStrengthLevel } from "@/lib/passwordStrength";
+import { SocialLoginButtons, OrDivider } from "@/components/SocialLoginButtons";
 
 const strengthGradientByLevel: Record<PasswordStrengthLevel, string> = {
   weak: "from-rose-600 to-red-500",
@@ -213,7 +214,12 @@ const SignIn = () => {
                 </Button>
               </form>
             ) : (
-              <form onSubmit={handleSubmit} className="px-5 py-6 space-y-4">
+              <>
+              <div className="px-5 pt-6 space-y-4">
+                <SocialLoginButtons />
+                <OrDivider />
+              </div>
+              <form onSubmit={handleSubmit} className="px-5 pb-6 space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="email">Email address</Label>
                   <Input
@@ -276,6 +282,7 @@ const SignIn = () => {
                   </Link>
                 </p>
               </form>
+              </>
             )}
           </div>
         </div>
