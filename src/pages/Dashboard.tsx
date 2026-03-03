@@ -12,7 +12,7 @@ import { useJobs } from "@/hooks/useJobs";
 import { Job } from "@/data/jobs";
 import { COMPANY_GOALS } from "@/data/constants";
 import { toast } from "sonner";
-import { Pencil, Trash2, ChevronDown, ChevronUp, Plus, X, Upload, Bell, MessageSquare, Users, Phone as PhoneIcon, Mail as MailIcon, MapPin, Truck as TruckIcon, Lock, RefreshCw, CreditCard, Send, Briefcase, Check, Sparkles, CheckCircle, ShieldCheck, FileText } from "lucide-react";
+import { Pencil, Trash2, ChevronDown, ChevronUp, Plus, X, Upload, Bell, MessageSquare, Users, Phone as PhoneIcon, Mail as MailIcon, MapPin, Truck as TruckIcon, Lock, RefreshCw, CreditCard, Send, Briefcase, Check, Sparkles, CheckCircle, ShieldCheck, FileText, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -43,6 +43,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
 import { useVerificationRequest } from "@/hooks/useVerification";
+import { ListPagination } from "@/components/ListPagination";
 
 const FREIGHT_TYPES = [
   "Box", "Car Hauler", "Drop and Hook", "Dry Bulk", "Dry Van", "Flatbed",
@@ -358,6 +359,8 @@ const PipelineColumn = ({
 };
 
 // ── AI Matches content (extracted so hook is only called when tab is active) ──
+const AI_MATCH_PAGE_SIZE = 10;
+
 const AiMatchesContent = ({
   userId,
   activeJobs,
@@ -379,6 +382,8 @@ const AiMatchesContent = ({
   currentPlan: string;
   switchTab: (tab: Tab) => void;
 }) => {
+  const [aiPage, setAiPage] = useState(0);
+  const [aiSearch, setAiSearch] = useState("");
   const {
     data: matches = [],
     isLoading: matchesLoading,
@@ -388,6 +393,21 @@ const AiMatchesContent = ({
     source: aiSourceFilter !== "all" ? (aiSourceFilter as "application" | "lead") : undefined,
     limit: matchLimit,
   });
+
+  // Client-side search filter
+  const filteredMatches = aiSearch.trim()
+    ? matches.filter((m) => {
+        const q = aiSearch.toLowerCase();
+        return (
+          m.candidateName?.toLowerCase().includes(q) ||
+          m.candidateEmail?.toLowerCase().includes(q) ||
+          m.candidatePhone?.toLowerCase().includes(q) ||
+          m.candidateState?.toLowerCase().includes(q) ||
+          m.candidateDriverType?.toLowerCase().includes(q) ||
+          m.candidateLicenseClass?.toLowerCase().includes(q)
+        );
+      })
+    : matches;
 
   const scoreBadgeClass = (score: number) => {
     if (score >= 80) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
@@ -403,8 +423,8 @@ const AiMatchesContent = ({
       </h2>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <Select value={aiJobFilter} onValueChange={setAiJobFilter}>
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <Select value={aiJobFilter} onValueChange={(v) => { setAiJobFilter(v); setAiPage(0); }}>
           <SelectTrigger className="w-[220px] h-9 text-sm">
             <SelectValue placeholder="All Jobs" />
           </SelectTrigger>
@@ -416,7 +436,7 @@ const AiMatchesContent = ({
           </SelectContent>
         </Select>
 
-        <Select value={aiSourceFilter} onValueChange={setAiSourceFilter}>
+        <Select value={aiSourceFilter} onValueChange={(v) => { setAiSourceFilter(v); setAiPage(0); }}>
           <SelectTrigger className="w-[180px] h-9 text-sm">
             <SelectValue placeholder="All Sources" />
           </SelectTrigger>
@@ -426,6 +446,16 @@ const AiMatchesContent = ({
             <SelectItem value="lead">Leads</SelectItem>
           </SelectContent>
         </Select>
+
+        <div className="relative ml-auto w-full sm:w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search candidates..."
+            value={aiSearch}
+            onChange={(e) => { setAiSearch(e.target.value); setAiPage(0); }}
+            className="pl-8 h-9 text-sm"
+          />
+        </div>
       </div>
 
       {/* Results */}
@@ -438,15 +468,18 @@ const AiMatchesContent = ({
           <p className="text-sm text-destructive mb-1">Failed to load matches.</p>
           <p className="text-xs text-muted-foreground">Please refresh the page to try again.</p>
         </div>
-      ) : matches.length === 0 ? (
+      ) : filteredMatches.length === 0 ? (
         <EmptyState
           icon={Sparkles}
-          heading="No matches found"
-          description="Post a job to start getting AI-matched candidates."
+          heading={aiSearch.trim() ? "No candidates match your search." : "No matches found"}
+          description={aiSearch.trim() ? undefined : "Post a job to start getting AI-matched candidates."}
         />
-      ) : (
+      ) : (() => {
+        const pageMatches = filteredMatches.slice(aiPage * AI_MATCH_PAGE_SIZE, (aiPage + 1) * AI_MATCH_PAGE_SIZE);
+        return (
+        <>
         <div className="space-y-3">
-          {matches.map((m) => (
+          {pageMatches.map((m) => (
             <div key={`${m.candidateId}-${m.candidateSource}`} className="border border-border bg-card px-5 py-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -503,13 +536,21 @@ const AiMatchesContent = ({
             </div>
           ))}
         </div>
-      )}
+        <ListPagination
+          page={aiPage}
+          totalItems={filteredMatches.length}
+          pageSize={AI_MATCH_PAGE_SIZE}
+          onPageChange={setAiPage}
+        />
+        </>
+        );
+      })()}
 
       {/* Plan gating banner */}
-      {(currentPlan === "free" || currentPlan === "starter") && matches.length > 0 && (
+      {(currentPlan === "free" || currentPlan === "starter") && filteredMatches.length > 0 && (
         <div className="mt-4 border border-border bg-amber-50 dark:bg-amber-950/30 px-5 py-3 flex items-center justify-between">
           <p className="text-sm text-amber-800 dark:text-amber-300">
-            Showing top {matches.length} of available matches.{" "}
+            Showing top {filteredMatches.length} of available matches.{" "}
             <Link to="/pricing" className="font-medium underline hover:no-underline">
               Upgrade to see all candidates.
             </Link>
@@ -627,6 +668,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [initialChatDriverId, setInitialChatDriverId] = useState<string | null>(() => searchParams.get("driver"));
   const [appPage, setAppPage] = useState(0);
   const [leadPage, setLeadPage] = useState(0);
+  const [jobPage, setJobPage] = useState(0);
   const [leadStateFilter, setLeadStateFilter] = useState("all");
   const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "owner-op" | "company">("all");
   const [contactLeadId, setContactLeadId] = useState<string | null>(null);
@@ -642,6 +684,27 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [savingJob, setSavingJob] = useState(false);
   const [aiJobFilter, setAiJobFilter] = useState<string>("all");
   const [aiSourceFilter, setAiSourceFilter] = useState<string>("all");
+
+  // Lightweight count query that runs regardless of active tab so the tab badge always shows
+  const MATCH_LIMITS: Record<string, number> = { free: 3, starter: 25, growth: 100, unlimited: 9999 };
+  const aiMatchLimit = MATCH_LIMITS[subscription?.plan ?? "free"] ?? 3;
+  const { data: aiMatchCount = null } = useQuery({
+    queryKey: ["company-match-count", user!.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("company_driver_match_scores")
+        .select("candidate_driver_id, candidate_id, candidate_source")
+        .eq("company_id", user!.id);
+      if (!data || data.length === 0) return 0;
+      // Deduplicate by person identity (same logic as useCompanyDriverMatches)
+      const seen = new Set<string>();
+      for (const row of data) {
+        seen.add(`${row.candidate_driver_id ?? row.candidate_id}:${row.candidate_source}`);
+      }
+      return Math.min(seen.size, aiMatchLimit);
+    },
+  });
 
   // Consume deep-link app/driver params from URL so navbar notification links work.
   // Keep ?tab= in the URL so refresh stays on the same tab.
@@ -1094,7 +1157,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
           </button>
           <button className={tabClass("ai-matches")} onClick={() => switchTab("ai-matches")} role="tab" aria-selected={activeTab === "ai-matches"}>
             <span className="flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" /> AI Matches
+              <Sparkles className="h-3.5 w-3.5" /> AI Matches{aiMatchCount !== null ? ` (${aiMatchCount})` : ""}
             </span>
           </button>
           <button className={tabClass("messages")} onClick={() => switchTab("messages")} role="tab" aria-selected={activeTab === "messages"}>
@@ -1232,9 +1295,13 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                   description='Click "Post New Job" to get started.'
                 />
               </div>
-            ) : (
+            ) : (() => {
+              const JOB_PAGE_SIZE = 10;
+              const pageJobs = jobs.slice(jobPage * JOB_PAGE_SIZE, (jobPage + 1) * JOB_PAGE_SIZE);
+              return (
+              <>
               <div className="border border-border bg-card divide-y divide-border">
-                {jobs.map((job) => (
+                {pageJobs.map((job) => (
                   <div key={job.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -1274,7 +1341,15 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                   </div>
                 ))}
               </div>
-            )}
+              <ListPagination
+                page={jobPage}
+                totalItems={jobs.length}
+                pageSize={JOB_PAGE_SIZE}
+                onPageChange={setJobPage}
+              />
+              </>
+              );
+            })()}
           </div>
         )}
 
@@ -1304,24 +1379,12 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                       />
                     ))}
                   </div>
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4 text-sm">
-                      <span className="text-muted-foreground">
-                        Showing {appPage * APP_PAGE_SIZE + 1}–{Math.min((appPage + 1) * APP_PAGE_SIZE, applications.length)} of {applications.length}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setAppPage((p) => p - 1)} disabled={appPage === 0}>
-                          Previous
-                        </Button>
-                        <span className="text-muted-foreground text-xs">
-                          {appPage + 1} / {totalPages}
-                        </span>
-                        <Button variant="outline" size="sm" onClick={() => setAppPage((p) => p + 1)} disabled={appPage >= totalPages - 1}>
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                  <ListPagination
+                    page={appPage}
+                    totalItems={applications.length}
+                    pageSize={APP_PAGE_SIZE}
+                    onPageChange={setAppPage}
+                  />
                 </>
               );
             })()}
@@ -1905,22 +1968,12 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                       );
                     })}
                   </div>
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-between mt-4 text-sm">
-                      <span className="text-muted-foreground">
-                        Showing {leadPage * LEAD_PAGE_SIZE + 1}–{Math.min((leadPage + 1) * LEAD_PAGE_SIZE, filtered.length)} of {filtered.length}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setLeadPage((p) => p - 1)} disabled={leadPage === 0}>
-                          Previous
-                        </Button>
-                        <span className="text-muted-foreground text-xs">{leadPage + 1} / {totalPages}</span>
-                        <Button variant="outline" size="sm" onClick={() => setLeadPage((p) => p + 1)} disabled={leadPage >= totalPages - 1}>
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                  <ListPagination
+                    page={leadPage}
+                    totalItems={filtered.length}
+                    pageSize={LEAD_PAGE_SIZE}
+                    onPageChange={setLeadPage}
+                  />
                 </>
               )}
 
@@ -1979,21 +2032,13 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                             <p className="text-xs text-muted-foreground text-center py-2">No matches.</p>
                           )}
                         </div>
-                        {dismissedTotalPages > 1 && (
-                          <div className="flex items-center justify-between text-sm pt-1">
-                            <span className="text-xs text-muted-foreground">
-                              {dismissedPage * DISMISSED_PAGE_SIZE + 1}–{Math.min((dismissedPage + 1) * DISMISSED_PAGE_SIZE, searchedDismissed.length)} of {searchedDismissed.length}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setDismissedPage((p) => p - 1)} disabled={dismissedPage === 0}>
-                                Prev
-                              </Button>
-                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setDismissedPage((p) => p + 1)} disabled={dismissedPage >= dismissedTotalPages - 1}>
-                                Next
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                        <ListPagination
+                          page={dismissedPage}
+                          totalItems={searchedDismissed.length}
+                          pageSize={DISMISSED_PAGE_SIZE}
+                          onPageChange={setDismissedPage}
+                          scrollToTop={false}
+                        />
                       </div>
                     )}
                   </div>
@@ -2263,9 +2308,8 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
 
         {/* ── Tab: AI Matches ──────────────────────────────────────────────── */}
         {activeTab === "ai-matches" && (() => {
-          const MATCH_LIMITS: Record<string, number> = { free: 3, starter: 25, growth: 100, unlimited: 9999 };
           const currentPlan = subscription?.plan ?? "free";
-          const matchLimit = MATCH_LIMITS[currentPlan] ?? 3;
+          const matchLimit = aiMatchLimit;
 
           const rolloutData = rollout.data;
           const companyUiVisible =

@@ -15,6 +15,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import type { Job } from "@/data/jobs";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/Spinner";
+import { ListPagination } from "@/components/ListPagination";
 
 const urlTypeMap: Record<string, string> = {
   "dry-van": "Dry Van",
@@ -138,7 +139,6 @@ const Jobs = () => {
     return result;
   }, [allActiveJobs, freightType, driverType, routeType, teamDriving, searchQuery, sortBy, matchScoreMap]);
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const goToPage = (p: number) => {
@@ -353,7 +353,8 @@ const Jobs = () => {
                           <button
                             onClick={() => handleToggleSave(job.id, job.company)}
                             aria-label={saved ? "Remove from saved" : "Save job"}
-                            className={`shrink-0 p-1 transition-colors ${saved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                            aria-pressed={saved}
+                            className={`shrink-0 p-2 transition-colors ${saved ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
                           >
                             {saved ? <BookmarkCheck className="h-5 w-5" /> : <Bookmark className="h-5 w-5" />}
                           </button>
@@ -393,61 +394,12 @@ const Jobs = () => {
                   );
                 })}
 
-                {/* Pagination */}
-                {totalPages > 1 && (() => {
-                  const pages: (number | "...")[] = [];
-                  if (totalPages <= 7) {
-                    for (let i = 0; i < totalPages; i++) pages.push(i);
-                  } else {
-                    pages.push(0);
-                    if (page > 2) pages.push("...");
-                    for (let i = Math.max(1, page - 1); i <= Math.min(totalPages - 2, page + 1); i++) pages.push(i);
-                    if (page < totalPages - 3) pages.push("...");
-                    pages.push(totalPages - 1);
-                  }
-                  return (
-                    <div className="flex items-center justify-between pt-4 border-t border-border mt-2">
-                      <span className="text-sm text-muted-foreground">
-                        Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
-                      </span>
-                      <div className="flex gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => goToPage(page - 1)}
-                          disabled={page === 0}
-                        >
-                          Previous
-                        </Button>
-                        {pages.map((p, idx) =>
-                          p === "..." ? (
-                            <span key={`ellipsis-${idx}`} className="w-9 flex items-center justify-center text-sm text-muted-foreground">...</span>
-                          ) : (
-                            <Button
-                              key={p}
-                              variant={p === page ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => goToPage(p)}
-                              className="w-9"
-                              aria-label={`Page ${p + 1}`}
-                              aria-current={p === page ? "page" : undefined}
-                            >
-                              {p + 1}
-                            </Button>
-                          )
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => goToPage(page + 1)}
-                          disabled={page >= totalPages - 1}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <ListPagination
+                  page={page}
+                  totalItems={filtered.length}
+                  pageSize={PAGE_SIZE}
+                  onPageChange={goToPage}
+                />
               </>
             ) : jobsError ? (
               <div className="border border-destructive/30 bg-destructive/5 p-12 text-center rounded-lg">

@@ -32,10 +32,30 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
 const SignInModal = lazy(() =>
-  import("@/components/SignInModal").then((m) => ({ default: m.SignInModal }))
+  import("@/components/SignInModal")
+    .then((m) => ({ default: m.SignInModal }))
+    .catch(() => {
+      if (!sessionStorage.getItem("chunk_reload")) {
+        sessionStorage.setItem("chunk_reload", "1");
+        window.location.reload();
+        return new Promise<never>(() => {});
+      }
+      sessionStorage.removeItem("chunk_reload");
+      return import("@/components/SignInModal").then((m) => ({ default: m.SignInModal }));
+    })
 );
 const NotificationCenter = lazy(() =>
-  import("@/components/NotificationCenter").then((m) => ({ default: m.NotificationCenter }))
+  import("@/components/NotificationCenter")
+    .then((m) => ({ default: m.NotificationCenter }))
+    .catch(() => {
+      if (!sessionStorage.getItem("chunk_reload")) {
+        sessionStorage.setItem("chunk_reload", "1");
+        window.location.reload();
+        return new Promise<never>(() => {});
+      }
+      sessionStorage.removeItem("chunk_reload");
+      return import("@/components/NotificationCenter").then((m) => ({ default: m.NotificationCenter }));
+    })
 );
 
 const jobDropdownItems = [

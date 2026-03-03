@@ -18,7 +18,11 @@ const Index = () => {
       <Navbar />
       <main>
         <Hero />
-        <Suspense fallback={null}>
+        <Suspense fallback={
+          <div className="py-20 flex items-center justify-center">
+            <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" role="status" aria-label="Loading sections" />
+          </div>
+        }>
           <HowItWorks />
           <JobCategories />
           <TopCompanies />

@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
+import { ListPagination } from "@/components/ListPagination";
 
 interface CompanyRow {
   id: string;
@@ -41,11 +42,14 @@ const COMPANY_STATES = [
   "Virginia","Washington","West Virginia","Wisconsin","Wyoming",
 ];
 
+const PAGE_SIZE = 12;
+
 const Companies = () => {
   usePageTitle("Company Directory");
   const [stateFilter, setStateFilter] = useState("All");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
 
   const {
     data: companies = [],
@@ -72,6 +76,7 @@ const Companies = () => {
     setStateFilter("All");
     setVerifiedOnly(false);
     setSearchQuery("");
+    setPage(0);
   };
 
   // Filter companies by state, verified, and search query
@@ -122,7 +127,7 @@ const Companies = () => {
                     id="companies-search"
                     placeholder="Company name or location..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
                     className="pl-9"
                   />
                 </div>
@@ -131,7 +136,7 @@ const Companies = () => {
               {/* State */}
               <div className="w-full sm:w-48 space-y-1">
                 <label htmlFor="companies-state" className="text-xs font-medium text-muted-foreground">State</label>
-                <Select value={stateFilter} onValueChange={setStateFilter} name="stateFilter">
+                <Select value={stateFilter} onValueChange={(v) => { setStateFilter(v); setPage(0); }} name="stateFilter">
                   <SelectTrigger id="companies-state">
                     <SelectValue placeholder="All states" />
                   </SelectTrigger>
@@ -150,7 +155,7 @@ const Companies = () => {
                 <span className="text-xs font-medium text-muted-foreground block">Verified</span>
                 <Button
                   variant={verifiedOnly ? "default" : "outline"}
-                  onClick={() => setVerifiedOnly((v) => !v)}
+                  onClick={() => { setVerifiedOnly((v) => !v); setPage(0); }}
                   className={verifiedOnly
                     ? "gap-1.5 h-10 bg-green-600 hover:bg-green-700 text-white"
                     : "gap-1.5 h-10"
@@ -201,9 +206,12 @@ const Companies = () => {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState icon={Building2} heading="No companies match the selected filters." />
-          ) : (
+          ) : (() => {
+            const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+            return (
+            <>
             <div className="divide-y divide-border">
-              {filtered.map((c) => (
+              {pageItems.map((c) => (
                 <div
                   key={c.id}
                   className="flex flex-col sm:flex-row items-start sm:items-center gap-5 px-5 py-5 border-l-2 border-l-primary hover:bg-muted/20 transition-colors"
@@ -278,7 +286,15 @@ const Companies = () => {
                 </div>
               ))}
             </div>
-          )}
+            <ListPagination
+              page={page}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
+            </>
+            );
+          })()}
         </div>
       </main>
       <Footer />

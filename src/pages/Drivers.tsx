@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ListPagination } from "@/components/ListPagination";
 
 const LICENSE_CLASSES = ["All", "Class A", "Class B", "Class C", "Permit Only"];
 const EXPERIENCE_OPTIONS = ["All", "None", "Less than 1 year", "1-3 years", "3-5 years", "5+ years"];
@@ -54,6 +55,8 @@ type DriverRow = {
   about: string | null;
 };
 
+const DRIVER_PAGE_SIZE = 12;
+
 const Drivers = () => {
   usePageTitle("Browse CDL Drivers");
   const { user, loading: authLoading } = useAuth();
@@ -62,6 +65,7 @@ const Drivers = () => {
   const [classFilter, setClassFilter] = useState("All");
   const [expFilter, setExpFilter] = useState("All");
   const [stateFilter, setStateFilter] = useState("All");
+  const [page, setPage] = useState(0);
   const [favorites, setFavorites] = useState<string[]>([]);
   const favoritesKey = user ? `company-driver-favorites-${user.id}` : "";
 
@@ -133,6 +137,7 @@ const Drivers = () => {
     setClassFilter("All");
     setExpFilter("All");
     setStateFilter("All");
+    setPage(0);
   };
 
   const toggleFavorite = (id: string) => {
@@ -236,7 +241,7 @@ const Drivers = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="text-xs font-medium uppercase tracking-wide opacity-70 block mb-1.5">License Class:</label>
-                <Select value={classFilter} onValueChange={setClassFilter}>
+                <Select value={classFilter} onValueChange={(v) => { setClassFilter(v); setPage(0); }}>
                   <SelectTrigger className="bg-background/10 border-white/20 dark:bg-background dark:border-border text-inherit">
                     <SelectValue placeholder="Choose an option..." />
                   </SelectTrigger>
@@ -251,7 +256,7 @@ const Drivers = () => {
               </div>
               <div>
                 <label className="text-xs font-medium uppercase tracking-wide opacity-70 block mb-1.5">Years Experience:</label>
-                <Select value={expFilter} onValueChange={setExpFilter}>
+                <Select value={expFilter} onValueChange={(v) => { setExpFilter(v); setPage(0); }}>
                   <SelectTrigger className="bg-background/10 border-white/20 dark:bg-background dark:border-border text-inherit">
                     <SelectValue placeholder="Choose an option..." />
                   </SelectTrigger>
@@ -266,7 +271,7 @@ const Drivers = () => {
               </div>
               <div>
                 <label className="text-xs font-medium uppercase tracking-wide opacity-70 block mb-1.5">License State:</label>
-                <Select value={stateFilter} onValueChange={setStateFilter}>
+                <Select value={stateFilter} onValueChange={(v) => { setStateFilter(v); setPage(0); }}>
                   <SelectTrigger className="bg-background/10 border-white/20 dark:bg-background dark:border-border text-inherit">
                     <SelectValue placeholder="Choose an option..." />
                   </SelectTrigger>
@@ -314,9 +319,12 @@ const Drivers = () => {
               icon={Users}
               heading={drivers.length === 0 ? "No registered drivers yet." : "No drivers match the selected filters."}
             />
-          ) : (
+          ) : (() => {
+            const pageItems = filtered.slice(page * DRIVER_PAGE_SIZE, (page + 1) * DRIVER_PAGE_SIZE);
+            return (
+            <>
             <div className="divide-y divide-border">
-              {filtered.map((driver) => (
+              {pageItems.map((driver) => (
                 <div key={driver.id} className="px-5 py-5 hover:bg-muted/30 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <button
@@ -367,7 +375,15 @@ const Drivers = () => {
                 </div>
               ))}
             </div>
-          )}
+            <ListPagination
+              page={page}
+              totalItems={filtered.length}
+              pageSize={DRIVER_PAGE_SIZE}
+              onPageChange={setPage}
+            />
+            </>
+            );
+          })()}
         </div>
       </main>
       <Footer />

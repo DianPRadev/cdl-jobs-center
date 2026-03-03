@@ -82,7 +82,23 @@ export function NotificationPreferences({ userId, role }: NotificationPreference
     }
   }, [loaded, searchParams]);
 
-  if (!loaded) return null;
+  if (!loaded) return (
+    <div className="border border-border bg-card p-5 mt-6 rounded-lg animate-pulse">
+      <div className="h-4 w-36 bg-muted rounded mb-3" />
+      <div className="h-3 w-64 bg-muted rounded mb-4" />
+      <div className="space-y-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex items-center justify-between gap-4">
+            <div className="space-y-1 flex-1">
+              <div className="h-3.5 w-28 bg-muted rounded" />
+              <div className="h-2.5 w-48 bg-muted rounded" />
+            </div>
+            <div className="h-5 w-9 bg-muted rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div ref={sectionRef} id="notification-preferences" className="border border-border bg-card p-5 mt-6 rounded-lg transition-all">

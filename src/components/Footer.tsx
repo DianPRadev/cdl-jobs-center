@@ -22,7 +22,7 @@ const Footer = () => {
                 { label: "Driver Sign In", path: "/signin" },
                 ...(!isDriver ? [{ label: "Pricing", path: "/pricing" }] : []),
               ].map((item) => (
-                <Link key={item.label} to={item.path} className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link key={item.label} to={item.path} className="text-sm text-muted-foreground hover:text-primary hover:underline transition-colors">
                   {item.label}
                 </Link>
               ))}
@@ -40,7 +40,7 @@ const Footer = () => {
                 { label: "Privacy Policy", path: "/privacy" },
                 { label: "Terms of Service", path: "/terms" },
               ].map((item) => (
-                <Link key={item.label} to={item.path} className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link key={item.label} to={item.path} className="text-sm text-muted-foreground hover:text-primary hover:underline transition-colors">
                   {item.label}
                 </Link>
               ))}

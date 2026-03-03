@@ -13,7 +13,7 @@ import { useActiveJobs } from "@/hooks/useJobs";
 import { useSavedJobs } from "@/hooks/useSavedJobs";
 import { useDriverProfile, DriverProfile } from "@/hooks/useDriverProfile";
 import { DRIVER_INTERESTS, DRIVER_NEXT_JOB } from "@/data/constants";
-import { Truck, Briefcase, Bookmark, User, BarChart3, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, MapPin, DollarSign, Bell, MessageSquare, Check, Sparkles, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { Truck, Briefcase, Bookmark, User, BarChart3, ChevronDown, ChevronUp, MapPin, DollarSign, Bell, MessageSquare, Check, Sparkles, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ import {
   type DriverFeedback,
 } from "@/hooks/useMatchScores";
 import { DriverMatchCard } from "@/components/matching/DriverMatchCard";
+import { ListPagination } from "@/components/ListPagination";
 
 type Tab =
   | "overview"
@@ -199,10 +200,14 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
   });
   const [expandedApp, setExpandedApp] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<PipelineStage | "All">("All");
+  const [appPage, setAppPage] = useState(0);
+  const [savedPage, setSavedPage] = useState(0);
   const [aiSort, setAiSort] = useState<"best-fit" | "recent">("best-fit");
   const [aiMinScore, setAiMinScore] = useState<"all" | "40" | "60" | "80">("all");
   const [aiPage, setAiPage] = useState(0);
   const AI_PAGE_SIZE = 10;
+  const APP_PAGE_SIZE = 10;
+  const SAVED_PAGE_SIZE = 10;
   const [feedbackPendingByJob, setFeedbackPendingByJob] = useState<Record<string, DriverFeedback | null>>({});
   const [trackedViewJobIds, setTrackedViewJobIds] = useState<Set<string>>(new Set());
   const [initialChatAppId, setInitialChatAppId] = useState<string | null>(() => searchParams.get("app"));
@@ -837,55 +842,12 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                         />
                       ))}
                     </div>
-                    {/* Pagination controls */}
-                    {totalAiPages > 1 && (
-                      <div className="flex items-center justify-center gap-2 pt-4">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={safeAiPage === 0}
-                          onClick={() => { setAiPage(safeAiPage - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                        >
-                          <ChevronLeft className="h-4 w-4 mr-1" />
-                          Previous
-                        </Button>
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: totalAiPages }, (_, i) => i)
-                            .filter((i) => {
-                              // Show first, last, and pages within 2 of current
-                              if (i === 0 || i === totalAiPages - 1) return true;
-                              return Math.abs(i - safeAiPage) <= 2;
-                            })
-                            .map((i, idx, arr) => {
-                              const showEllipsis = idx > 0 && i - arr[idx - 1] > 1;
-                              return (
-                                <span key={i} className="flex items-center">
-                                  {showEllipsis && <span className="px-1 text-xs text-muted-foreground">...</span>}
-                                  <button
-                                    onClick={() => { setAiPage(i); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                                    className={`h-8 w-8 rounded text-sm font-medium transition-colors ${
-                                      i === safeAiPage
-                                        ? "bg-primary text-primary-foreground"
-                                        : "hover:bg-muted text-muted-foreground"
-                                    }`}
-                                  >
-                                    {i + 1}
-                                  </button>
-                                </span>
-                              );
-                            })}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={safeAiPage >= totalAiPages - 1}
-                          onClick={() => { setAiPage(safeAiPage + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                        >
-                          Next
-                          <ChevronRight className="h-4 w-4 ml-1" />
-                        </Button>
-                      </div>
-                    )}
+                    <ListPagination
+                      page={safeAiPage}
+                      totalItems={filteredAiMatches.length}
+                      pageSize={AI_PAGE_SIZE}
+                      onPageChange={setAiPage}
+                    />
                   </>
                 )}
           </div>
@@ -909,7 +871,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   return (
                     <button
                       key={stage}
-                      onClick={() => setStageFilter(stage)}
+                      onClick={() => { setStageFilter(stage); setAppPage(0); }}
                       className={`text-xs font-medium px-3 py-1.5 border transition-colors ${
                         isActive
                           ? "border-primary bg-primary text-primary-foreground"
@@ -933,9 +895,12 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
               <div className="border border-border bg-card p-8 text-center text-sm text-muted-foreground">
                 No applications with status "{stageFilter === "Rejected" ? "Not Moving Forward" : stageFilter}".
               </div>
-            ) : (
+            ) : (() => {
+              const pageApps = filteredApps.slice(appPage * APP_PAGE_SIZE, (appPage + 1) * APP_PAGE_SIZE);
+              return (
+              <>
               <div className="space-y-3">
-                {filteredApps.map((app) => {
+                {pageApps.map((app) => {
                   const isExpanded = expandedApp === app.id;
                   const unseen = isAppUnseen(app);
                   const displayTitle = app.jobTitle && app.jobTitle !== "General Application"
@@ -1032,7 +997,15 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   );
                 })}
               </div>
-            )}
+              <ListPagination
+                page={appPage}
+                totalItems={filteredApps.length}
+                pageSize={APP_PAGE_SIZE}
+                onPageChange={setAppPage}
+              />
+              </>
+              );
+            })()}
           </div>
         )}
 
@@ -1053,9 +1026,12 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                 <p className="mb-4">You haven't saved any jobs yet.</p>
                 <Button asChild><Link to="/jobs">Browse Jobs</Link></Button>
               </div>
-            ) : (
+            ) : (() => {
+              const pageSaved = savedJobs.slice(savedPage * SAVED_PAGE_SIZE, (savedPage + 1) * SAVED_PAGE_SIZE);
+              return (
+              <>
               <div className="space-y-3">
-                {savedJobs.map((job) => (
+                {pageSaved.map((job) => (
                   <div key={job.id} className="border border-border bg-card p-4 flex flex-col sm:flex-row gap-4">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-display font-semibold text-primary mb-0.5">{job.company}</h3>
@@ -1091,7 +1067,15 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   </div>
                 ))}
               </div>
-            )}
+              <ListPagination
+                page={savedPage}
+                totalItems={savedJobs.length}
+                pageSize={SAVED_PAGE_SIZE}
+                onPageChange={setSavedPage}
+              />
+              </>
+              );
+            })()}
           </div>
         )}
 

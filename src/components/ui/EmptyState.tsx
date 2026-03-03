@@ -18,7 +18,7 @@ export function EmptyState({
   return (
     <div className={cn("p-12 text-center", className)}>
       {Icon && <Icon className="h-10 w-10 text-muted-foreground mx-auto mb-3" aria-hidden="true" />}
-      <p className="font-medium text-foreground mb-1">{heading}</p>
+      <h3 className="font-medium text-foreground mb-1">{heading}</h3>
       {description && <p className="text-sm text-muted-foreground mb-4">{description}</p>}
       {action && (
         <Button onClick={action.onClick} size="sm">

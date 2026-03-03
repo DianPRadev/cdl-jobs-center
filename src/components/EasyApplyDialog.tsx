@@ -20,9 +20,10 @@ type OffOnToggleProps = {
 };
 
 const OffOnToggle = ({ checked, onChange }: OffOnToggleProps) => (
-  <div className="inline-flex overflow-hidden rounded-sm border border-border">
+  <div role="switch" aria-checked={checked} className="inline-flex overflow-hidden rounded-sm border border-border">
     <button
       type="button"
+      tabIndex={-1}
       onClick={() => onChange(false)}
       className={cn(
         "h-7 w-14 text-center text-[11px] font-semibold transition-colors",
@@ -33,6 +34,7 @@ const OffOnToggle = ({ checked, onChange }: OffOnToggleProps) => (
     </button>
     <button
       type="button"
+      tabIndex={-1}
       onClick={() => onChange(true)}
       className={cn(
         "h-7 w-14 text-center text-[11px] font-semibold transition-colors",
