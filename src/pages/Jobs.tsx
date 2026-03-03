@@ -323,7 +323,15 @@ const Jobs = () => {
                 {paginated.map((job) => {
                   const saved = savedIds.includes(job.id);
                   return (
-                    <div key={job.id} className="border border-border bg-card p-5 flex flex-col sm:flex-row gap-4 transition-shadow hover:shadow-md hover:border-primary/30 overflow-hidden">
+                    <div key={job.id} className="border border-border bg-card p-5 rounded-md flex flex-col sm:flex-row gap-4 transition-shadow hover:shadow-md hover:border-primary/30 overflow-hidden">
+                      {/* Company logo */}
+                      <div className="hidden sm:flex shrink-0 self-start h-[4.5rem] w-[4.5rem] border border-border rounded-md items-center justify-center bg-white dark:bg-muted overflow-hidden">
+                        {job.logoUrl ? (
+                          <img src={job.logoUrl} alt={job.company} loading="lazy" className="h-full w-full object-contain p-1.5" />
+                        ) : (
+                          <Truck className="h-7 w-7 text-muted-foreground" />
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <div className="min-w-0">
@@ -378,17 +386,10 @@ const Jobs = () => {
                         <hr className="border-border mb-2" />
                         <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">{job.description}</p>
                       </div>
-                      <div className="flex flex-col items-stretch gap-3 shrink-0 w-36">
+                      <div className="flex flex-col items-stretch gap-3 shrink-0">
                         <Button asChild className="w-full">
                           <Link to={`/jobs/${job.id}`}>View Job</Link>
                         </Button>
-                        <div className="h-14 w-full border border-border flex items-center justify-center bg-muted/30 overflow-hidden">
-                          {job.logoUrl ? (
-                            <img src={job.logoUrl} alt={job.company} loading="lazy" className="h-full w-full object-contain p-1" />
-                          ) : (
-                            <Truck className="h-6 w-6 text-muted-foreground" />
-                          )}
-                        </div>
                       </div>
                     </div>
                   );
