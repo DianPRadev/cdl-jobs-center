@@ -58,8 +58,9 @@ const Onboarding = () => {
 
       if (rpcErr) throw rpcErr;
 
-      // Update user_metadata so AuthContext picks up the role on next load
-      await supabase.auth.updateUser({ data: { role } });
+      // Update user_metadata in the background (don't await — it can hang).
+      // AuthContext reads the role from profiles table anyway.
+      supabase.auth.updateUser({ data: { role } }).catch(() => {});
 
       toast.success(role === "driver" ? "Welcome, driver!" : "Welcome aboard!");
 
