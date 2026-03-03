@@ -55,7 +55,7 @@ import { formatDate } from "@/lib/dateUtils";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { useAllVerificationRequests, useReviewVerification } from "@/hooks/useVerification";
+import { useAllVerificationRequests, useReviewVerification, getVerificationDocSignedUrl } from "@/hooks/useVerification";
 import { Textarea } from "@/components/ui/textarea";
 import { useMatchingRollout } from "@/hooks/useMatchScores";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -1020,11 +1020,18 @@ function AdminDashboardInner() {
                               <div>
                                 <p className="text-xs text-muted-foreground mb-1.5">Supporting Documents:</p>
                                 <div className="flex flex-wrap gap-2">
-                                  {req.documentUrls.map((url, i) => (
-                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs text-primary underline hover:opacity-80">
+                                  {req.documentUrls.map((storedPath, i) => (
+                                    <button
+                                      key={i}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs text-primary underline hover:opacity-80"
+                                      onClick={async () => {
+                                        const url = await getVerificationDocSignedUrl(storedPath);
+                                        if (url) window.open(url, "_blank");
+                                      }}
+                                    >
                                       <ExternalLink className="h-3 w-3" />
                                       Document {i + 1}
-                                    </a>
+                                    </button>
                                   ))}
                                 </div>
                               </div>

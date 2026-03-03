@@ -1,6 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
+/** Convert a stored document value (path or legacy public URL) to a signed URL */
+export async function getVerificationDocSignedUrl(storedValue: string): Promise<string | null> {
+  // Extract path from legacy full public URLs
+  let path = storedValue;
+  const marker = "/object/public/verification-documents/";
+  const idx = storedValue.indexOf(marker);
+  if (idx !== -1) {
+    path = storedValue.substring(idx + marker.length);
+  }
+  const { data } = await supabase.storage
+    .from("verification-documents")
+    .createSignedUrl(path, 3600);
+  return data?.signedUrl ?? null;
+}
+
 export interface VerificationRequest {
   id: string;
   companyId: string;

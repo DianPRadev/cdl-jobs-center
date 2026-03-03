@@ -23,6 +23,24 @@ function rowToJob(row: Record<string, any>): Job {
   };
 }
 
+// ── Batch-fetch company logos (no direct FK from jobs to company_profiles) ────
+async function attachLogos(rows: Record<string, unknown>[]): Promise<Job[]> {
+  const companyIds = [...new Set(rows.map((r) => r.company_id as string).filter(Boolean))];
+  const logoMap = new Map<string, string | null>();
+  if (companyIds.length > 0) {
+    const { data: logos } = await supabase
+      .from("company_profiles")
+      .select("id, logo_url")
+      .in("id", companyIds);
+    for (const row of logos ?? []) {
+      logoMap.set(row.id, row.logo_url ?? null);
+    }
+  }
+  return rows.map((row) =>
+    rowToJob({ ...row, company_profiles: { logo_url: logoMap.get(row.company_id as string) ?? null } }),
+  );
+}
+
 // ── Public listing — all Active jobs ─────────────────────────────────────────
 export function useActiveJobs() {
   const { data, isLoading, error, refetch } = useQuery({
@@ -34,7 +52,7 @@ export function useActiveJobs() {
         .eq("status", "Active")
         .order("posted_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(rowToJob);
+      return attachLogos((data ?? []) as Record<string, unknown>[]);
     },
     staleTime: 60_000,
   });
@@ -52,7 +70,14 @@ export function useJobById(jobId: string | undefined) {
         .eq("id", jobId!)
         .single();
       if (error) throw error;
-      return data ? rowToJob(data) : null;
+      if (!data) return null;
+      // Fetch company logo
+      const { data: cp } = await supabase
+        .from("company_profiles")
+        .select("logo_url")
+        .eq("id", data.company_id)
+        .maybeSingle();
+      return rowToJob({ ...data, company_profiles: cp ?? null });
     },
     enabled: !!jobId,
   });
@@ -73,7 +98,7 @@ export function useJobs(companyId: string) {
         .eq("company_id", companyId)
         .order("posted_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(rowToJob);
+      return attachLogos((data ?? []) as Record<string, unknown>[]);
     },
     enabled: !!companyId,
   });

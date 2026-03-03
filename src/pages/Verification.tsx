@@ -66,8 +66,8 @@ const Verification = () => {
         toast.error(`Failed to upload ${file.name}`);
         continue;
       }
-      const { data: { publicUrl } } = supabase.storage.from("verification-documents").getPublicUrl(path);
-      urls.push(publicUrl);
+      // Store the storage path — we'll generate signed URLs when displaying
+      urls.push(path);
     }
     setDocumentUrls((prev) => [...prev, ...urls]);
     setUploading(false);
