@@ -1,6 +1,6 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,7 @@ import { useApplication } from "@/hooks/useApplication";
 import { useAuth } from "@/context/auth";
 import { useDriverProfile } from "@/hooks/useDriverProfile";
 import { useRefreshMyMatches, useDriverJobMatches, type DriverJobMatch } from "@/hooks/useMatchScores";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { scoreJobsClientSide, type JobRow } from "@/lib/clientScoring";
 import { SignInModal } from "@/components/SignInModal";
 import { AIGenerationScreen } from "@/components/matching/AIGenerationScreen";
@@ -105,6 +105,7 @@ const ToggleRow = ({ id, name, label, checked, onChange }: { id?: string; name?:
 );
 
 const MATCH_STEP_KEY = "cdl-ai-match-step";
+const FALLBACK_MATCHES_KEY = "cdl-ai-fallback-matches";
 
 const ApplyNow = () => {
   usePageTitle("Apply Now");
@@ -136,7 +137,12 @@ const ApplyNow = () => {
   const [matchesStartedAt, setMatchesStartedAt] = useState<number | null>(null);
   const [animationComplete, setAnimationComplete] = useState(false);
   const [matchRefreshDone, setMatchRefreshDone] = useState(false);
-  const [clientFallbackMatches, setClientFallbackMatches] = useState<DriverJobMatch[]>([]);
+  const [clientFallbackMatches, setClientFallbackMatches] = useState<DriverJobMatch[]>(() => {
+    try {
+      const raw = sessionStorage.getItem(FALLBACK_MATCHES_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
   const handleAnimationComplete = useCallback(() => setAnimationComplete(true), []);
 
   // Fallback: force animation complete after 6s in case callback doesn't fire (mobile)
@@ -146,10 +152,17 @@ const ApplyNow = () => {
     return () => clearTimeout(fallback);
   }, [step, animationComplete]);
 
-  // Persist step to sessionStorage
+  // Persist step + fallback matches to sessionStorage
   useEffect(() => {
     sessionStorage.setItem(MATCH_STEP_KEY, String(step));
   }, [step]);
+  useEffect(() => {
+    if (clientFallbackMatches.length > 0) {
+      sessionStorage.setItem(FALLBACK_MATCHES_KEY, JSON.stringify(clientFallbackMatches));
+    } else {
+      sessionStorage.removeItem(FALLBACK_MATCHES_KEY);
+    }
+  }, [clientFallbackMatches]);
 
   const [firstName, setFirstName] = useState(saved.firstName ?? "");
   const [lastName, setLastName] = useState(saved.lastName ?? "");
@@ -195,25 +208,41 @@ const ApplyNow = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Fetch matches unconditionally so they survive back-navigation
-  const { data: matches = [], isLoading: matchesLoading } = useDriverJobMatches(
+  const { data: rawMatches = [], isLoading: matchesLoading } = useDriverJobMatches(
     user?.id,
     { limit: 20, minScore: 0, excludeHidden: true },
   );
 
+  // Fetch job IDs the driver already applied to, so we can filter them out
+  const { data: appliedJobIds = [] } = useQuery({
+    queryKey: ["applied-job-ids", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("applications")
+        .select("job_id")
+        .eq("driver_id", user!.id)
+        .not("job_id", "is", null);
+      return (data ?? []).map(r => r.job_id as string);
+    },
+    enabled: !!user?.id,
+    staleTime: 30_000,
+  });
+  const appliedSet = useMemo(() => new Set(appliedJobIds), [appliedJobIds]);
+  const matches = rawMatches.filter(m => !appliedSet.has(m.jobId));
+
   // Determine if matches are still computing (no fresh results since submission)
   const isStillComputing = matchesStartedAt
-    ? !matches.some((m) => new Date(m.computedAt).getTime() > matchesStartedAt)
+    ? !rawMatches.some((m) => new Date(m.computedAt).getTime() > matchesStartedAt)
     : false;
 
-  // If we restored from browser history to step 5 with no matches, fall back once.
-  // Do not keep forcing step 1 during a fresh search flow.
+  // If we restored from browser history to step 5 with no matches at all, fall back once.
   useEffect(() => {
     if (!shouldValidateRestoredStep.current || matchesLoading) return;
-    if (step === 5 && matches.length === 0 && !matchesStartedAt) {
+    if (step === 5 && matches.length === 0 && clientFallbackMatches.length === 0 && !matchesStartedAt) {
       setStep(1);
     }
     shouldValidateRestoredStep.current = false;
-  }, [step, matchesLoading, matches.length, matchesStartedAt]);
+  }, [step, matchesLoading, matches.length, clientFallbackMatches.length, matchesStartedAt]);
 
   // Reset matchesStartedAt when entering step 4 (prevents stale timestamps on back-navigation)
   useEffect(() => {
@@ -258,7 +287,7 @@ const ApplyNow = () => {
             { driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route },
             jobRows,
           );
-          setClientFallbackMatches(scored.slice(0, 20));
+          setClientFallbackMatches(scored.filter(m => !appliedSet.has(m.jobId)).slice(0, 20));
         }
       } catch (err) {
         console.error("Client-side scoring failed:", err);
@@ -266,7 +295,7 @@ const ApplyNow = () => {
       setMatchesStartedAt(null); // stop "still computing"
     }, remaining);
     return () => clearTimeout(timer);
-  }, [step, isStillComputing, matchesStartedAt, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route]);
+  }, [step, isStillComputing, matchesStartedAt, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route, appliedSet]);
 
   // Transition from step 4 → 5 when animation complete
   useEffect(() => {
@@ -301,7 +330,7 @@ const ApplyNow = () => {
               { driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route },
               jobRows,
             );
-            setClientFallbackMatches(scored.slice(0, 20));
+            setClientFallbackMatches(scored.filter(m => !appliedSet.has(m.jobId)).slice(0, 20));
           }
         } catch (err) {
           console.error("Client-side fallback scoring failed:", err);
@@ -324,7 +353,7 @@ const ApplyNow = () => {
       queryClient.invalidateQueries({ queryKey: ["driver-matches", user?.id] });
     }, 2000);
     return () => clearTimeout(timer);
-  }, [step, animationComplete, matchesStartedAt, matchRefreshDone, matches, queryClient, user?.id, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route]);
+  }, [step, animationComplete, matchesStartedAt, matchRefreshDone, matches, queryClient, user?.id, driverType, licenseClass, yearsExp, licenseState, soloTeam, endorse, hauler, route, appliedSet]);
 
   // Pre-fill empty fields from driver profile (Supabase)
   useEffect(() => {
@@ -827,6 +856,7 @@ const ApplyNow = () => {
                       size="sm"
                       onClick={() => {
                         sessionStorage.removeItem(MATCH_STEP_KEY);
+                        sessionStorage.removeItem(FALLBACK_MATCHES_KEY);
                         setMatchesStartedAt(null);
                         setAnimationComplete(false);
                         setMatchRefreshDone(false);
