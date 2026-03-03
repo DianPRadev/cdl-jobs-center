@@ -59,7 +59,7 @@ const DriverProfile = () => {
 
   const { data: driver, isLoading, isError, error } = useQuery({
     queryKey: ["driver-profile-public", id],
-    enabled: !!id && !!user && user.role === "company",
+    enabled: !!id && !!user && (user.role === "company" || user.role === "admin"),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("driver_profiles_safe")
@@ -86,7 +86,7 @@ const DriverProfile = () => {
 
   usePageTitle(driver?.name ?? "Driver Profile");
 
-  if (!user || user.role !== "company") {
+  if (!user || (user.role !== "company" && user.role !== "admin")) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
