@@ -64,6 +64,9 @@ const Onboarding = () => {
 
       toast.success(role === "driver" ? "Welcome, driver!" : "Welcome aboard!");
 
+      // Brief pause so the user sees the success feedback before navigating
+      await new Promise((r) => setTimeout(r, 1500));
+
       // Force a page reload so AuthContext re-fetches the updated profile
       window.location.href = role === "company" ? "/dashboard" : "/driver-dashboard";
     } catch (err) {
