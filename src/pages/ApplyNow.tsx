@@ -502,16 +502,33 @@ const ApplyNow = () => {
           yearsExp, licenseState, zipCode, dateOfBirth: date, about: notes,
           homeAddress: "", interestedIn: "", nextJobWant: "", hasAccidents: "", wantsContact: "",
         }),
-        // 2. Insert enrichment application (non-fatal)
-        supabase.from("applications").insert({
-          driver_id: user.id, company_id: null, job_id: null,
-          company_name: "General Application", job_title: "AI Match Profile",
-          first_name: firstName, last_name: lastName, email, phone,
-          cdl_number: cdlNumber, zip_code: zipCode, available_date: date || null,
-          driver_type: driverType, license_class: licenseClass,
-          years_exp: yearsExp, license_state: licenseState, solo_team: soloTeam,
-          notes, prefs, endorse, hauler, route, extra, pipeline_stage: "New",
-        }).then(({ error }) => { if (error) console.error("Application insert failed:", error); }),
+        // 2. Upsert enrichment record so the edge function can read solo_team/endorse/hauler/route.
+        //    Uses a single row per driver (upsert on driver_id where job_title = 'AI Match Profile').
+        (async () => {
+          const { data: existing } = await supabase
+            .from("applications")
+            .select("id")
+            .eq("driver_id", user.id)
+            .eq("job_title", "AI Match Profile")
+            .limit(1)
+            .maybeSingle();
+
+          const enrichmentFields = {
+            driver_id: user.id, company_id: null, job_id: null,
+            company_name: "AI Match Profile", job_title: "AI Match Profile",
+            first_name: firstName, last_name: lastName, email, phone,
+            cdl_number: cdlNumber, zip_code: zipCode, available_date: date || null,
+            driver_type: driverType, license_class: licenseClass,
+            years_exp: yearsExp, license_state: licenseState, solo_team: soloTeam,
+            notes, prefs, endorse, hauler, route, extra, pipeline_stage: "New" as const,
+          };
+
+          if (existing) {
+            await supabase.from("applications").update(enrichmentFields).eq("id", existing.id);
+          } else {
+            await supabase.from("applications").insert(enrichmentFields);
+          }
+        })().catch((err) => console.error("Enrichment upsert failed:", err)),
       ]);
 
       // Fire match refresh after latest profile/application data is persisted.

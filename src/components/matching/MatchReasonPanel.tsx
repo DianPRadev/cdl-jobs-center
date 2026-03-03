@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Info } from "lucide-react";
 import { DriverJobMatch } from "@/hooks/useMatchScores";
 import { Button } from "@/components/ui/button";
 
@@ -6,6 +6,7 @@ interface MatchReasonPanelProps {
   match: DriverJobMatch;
   onHelpful?: () => void;
   helpfulPending?: boolean;
+  helpfulSubmitted?: boolean;
 }
 
 const labelize = (value: string) =>
@@ -18,6 +19,7 @@ export function MatchReasonPanel({
   match,
   onHelpful,
   helpfulPending = false,
+  helpfulSubmitted = false,
 }: MatchReasonPanelProps) {
   const breakdownRows = Object.entries(match.scoreBreakdown ?? {});
 
@@ -89,12 +91,18 @@ export function MatchReasonPanel({
         {onHelpful && (
           <Button
             type="button"
-            variant="outline"
+            variant={helpfulSubmitted ? "secondary" : "outline"}
             size="sm"
             disabled={helpfulPending}
             onClick={onHelpful}
           >
-            {helpfulPending ? "Saving..." : "This Match Was Helpful"}
+            {helpfulPending ? (
+              "Saving..."
+            ) : helpfulSubmitted ? (
+              <><Check className="h-3.5 w-3.5" /> Marked Helpful</>
+            ) : (
+              "This Match Was Helpful"
+            )}
           </Button>
         )}
       </div>

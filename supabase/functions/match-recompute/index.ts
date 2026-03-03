@@ -373,7 +373,7 @@ async function processDriverProfile(
   // Fetch all active jobs
   const { data: jobs } = await supabase
     .from("jobs")
-    .select("*, company_profiles(logo_url)")
+    .select("*")
     .eq("status", "Active");
   if (!jobs || jobs.length === 0) return;
 

@@ -508,6 +508,25 @@ export function useCompanyDriverMatches(
   });
 }
 
+export function useDriverFeedbackMap(driverId: string | undefined) {
+  return useQuery({
+    queryKey: ["driver-feedback-map", driverId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("driver_match_feedback")
+        .select("job_id, feedback")
+        .eq("driver_id", driverId!);
+      if (error) throw error;
+      const map = new Map<string, DriverFeedback>();
+      for (const row of data ?? []) {
+        map.set(row.job_id, row.feedback as DriverFeedback);
+      }
+      return map;
+    },
+    enabled: !!driverId,
+  });
+}
+
 export function useRecordDriverMatchFeedback(driverId: string | undefined) {
   const qc = useQueryClient();
 
@@ -519,6 +538,7 @@ export function useRecordDriverMatchFeedback(driverId: string | undefined) {
       qc.invalidateQueries({ queryKey: ["driver-matches", driverId] });
       qc.invalidateQueries({ queryKey: ["driver-all-matches", driverId] });
       qc.invalidateQueries({ queryKey: ["driver-match-score", driverId] });
+      qc.invalidateQueries({ queryKey: ["driver-feedback-map", driverId] });
     },
   });
 }

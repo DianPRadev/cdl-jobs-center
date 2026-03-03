@@ -26,7 +26,7 @@ export class HuggingFaceProvider implements EmbeddingProvider {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
-    const url = `https://api-inference.huggingface.co/pipeline/feature-extraction/${this.modelName}`;
+    const url = `https://router.huggingface.co/hf-inference/models/${this.modelName}/pipeline/feature-extraction`;
 
     const response = await fetch(url, {
       method: "POST",

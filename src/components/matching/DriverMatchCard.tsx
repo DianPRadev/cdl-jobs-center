@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Bookmark,
   BookmarkCheck,
+  Check,
   ChevronDown,
   ChevronUp,
   Compass,
@@ -21,6 +22,7 @@ interface DriverMatchCardProps {
   match: DriverJobMatch;
   isSaved: boolean;
   pendingFeedback?: DriverFeedback | null;
+  submittedFeedback?: DriverFeedback | null;
   onToggleSave: (jobId: string) => Promise<void> | void;
   onFeedback: (jobId: string, feedback: DriverFeedback) => Promise<void> | void;
   onTrackEvent?: (jobId: string, eventType: DriverMatchEventType) => void;
@@ -43,6 +45,7 @@ export function DriverMatchCard({
   match,
   isSaved,
   pendingFeedback = null,
+  submittedFeedback = null,
   onToggleSave,
   onFeedback,
   onTrackEvent,
@@ -158,22 +161,36 @@ export function DriverMatchCard({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant={submittedFeedback === "not_relevant" ? "secondary" : "outline"}
             disabled={pendingFeedback === "not_relevant"}
             onClick={() => onFeedback(match.jobId, "not_relevant")}
           >
-            {pendingFeedback === "not_relevant" ? "Saving..." : "Not relevant"}
+            {pendingFeedback === "not_relevant" ? (
+              "Saving..."
+            ) : submittedFeedback === "not_relevant" ? (
+              <><Check className="h-3.5 w-3.5" /> Not relevant</>
+            ) : (
+              "Not relevant"
+            )}
           </Button>
 
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="border-destructive/40 text-destructive hover:bg-destructive/10"
+            className={submittedFeedback === "hide"
+              ? "border-muted text-muted-foreground"
+              : "border-destructive/40 text-destructive hover:bg-destructive/10"}
             disabled={pendingFeedback === "hide"}
             onClick={() => onFeedback(match.jobId, "hide")}
           >
-            {pendingFeedback === "hide" ? "Saving..." : "Hide"}
+            {pendingFeedback === "hide" ? (
+              "Saving..."
+            ) : submittedFeedback === "hide" ? (
+              <><Check className="h-3.5 w-3.5" /> Hidden</>
+            ) : (
+              "Hide"
+            )}
           </Button>
 
           <Button
@@ -192,6 +209,7 @@ export function DriverMatchCard({
             match={match}
             onHelpful={() => onFeedback(match.jobId, "helpful")}
             helpfulPending={pendingFeedback === "helpful"}
+            helpfulSubmitted={submittedFeedback === "helpful"}
           />
         )}
       </div>

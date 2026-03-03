@@ -13,7 +13,7 @@ import { useActiveJobs } from "@/hooks/useJobs";
 import { useSavedJobs } from "@/hooks/useSavedJobs";
 import { useDriverProfile, DriverProfile } from "@/hooks/useDriverProfile";
 import { DRIVER_INTERESTS, DRIVER_NEXT_JOB } from "@/data/constants";
-import { Truck, Briefcase, Bookmark, User, BarChart3, ChevronDown, ChevronUp, MapPin, DollarSign, Bell, MessageSquare, Check, Sparkles, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { Truck, Briefcase, Bookmark, User, BarChart3, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, MapPin, DollarSign, Bell, MessageSquare, Check, Sparkles, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -27,6 +27,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
   useDriverJobMatches,
+  useDriverFeedbackMap,
   useRecordDriverMatchFeedback,
   useRefreshMyMatches,
   useTrackDriverMatchEvent,
@@ -180,12 +181,13 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
   const { savedIds, toggle: toggleSave } = useSavedJobs(user!.id);
   const { profile, isLoading: profileLoading, saveProfile } = useDriverProfile(user!.id);
   const { data: unreadMsgCount = 0 } = useUnreadCount(user!.id, "driver");
-  const { data: aiMatches = [], isLoading: aiMatchesLoading, isError: aiMatchesError } = useDriverJobMatches(
+  const { data: aiMatches = [], isLoading: aiMatchesLoading, isError: aiMatchesError, isFetched: aiMatchesFetched } = useDriverJobMatches(
     user!.id,
-    { limit: 20, minScore: 0, excludeHidden: true },
+    { limit: 200, minScore: 0, excludeHidden: true },
   );
   const matchesLoading = aiMatchesLoading && !aiMatchesError;
   const feedbackMutation = useRecordDriverMatchFeedback(user!.id);
+  const { data: feedbackMap } = useDriverFeedbackMap(user!.id);
   const trackEventMutation = useTrackDriverMatchEvent(user!.id);
   const refreshMatchesMutation = useRefreshMyMatches(user!.id);
 
@@ -199,6 +201,8 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
   const [stageFilter, setStageFilter] = useState<PipelineStage | "All">("All");
   const [aiSort, setAiSort] = useState<"best-fit" | "recent">("best-fit");
   const [aiMinScore, setAiMinScore] = useState<"all" | "40" | "60" | "80">("all");
+  const [aiPage, setAiPage] = useState(0);
+  const AI_PAGE_SIZE = 10;
   const [feedbackPendingByJob, setFeedbackPendingByJob] = useState<Record<string, DriverFeedback | null>>({});
   const [trackedViewJobIds, setTrackedViewJobIds] = useState<Set<string>>(new Set());
   const [initialChatAppId, setInitialChatAppId] = useState<string | null>(() => searchParams.get("app"));
@@ -249,7 +253,9 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
         .eq("driver_id", user!.id)
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map(rowToApp);
+      return (data ?? [])
+        .map(rowToApp)
+        .filter((a) => a.jobTitle !== "AI Match Profile"); // hide internal enrichment rows
     },
     enabled: !!user?.id,
     staleTime: 30_000,
@@ -343,16 +349,26 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
     }
     return scored;
   }, [aiMatches, aiMinScoreValue, aiSort]);
+
+  // Pagination
+  const totalAiPages = Math.max(1, Math.ceil(filteredAiMatches.length / AI_PAGE_SIZE));
+  const safeAiPage = Math.min(aiPage, totalAiPages - 1);
+  const paginatedAiMatches = filteredAiMatches.slice(safeAiPage * AI_PAGE_SIZE, (safeAiPage + 1) * AI_PAGE_SIZE);
+
+  // Reset to page 0 when filters change
+  useEffect(() => { setAiPage(0); }, [aiMinScoreValue, aiSort]);
+
   const recommendedMatches = useMemo(
     () => aiMatches.filter((m) => m.overallScore >= 30).slice(0, 5),
     [aiMatches],
   );
 
-  const bestMatch = filteredAiMatches[0] ?? null;
-  const newSinceYesterdayCount = filteredAiMatches.filter(
+  // Stats use full aiMatches (not filtered), so header cards always reflect reality
+  const bestMatch = aiMatches[0] ?? null;
+  const newSinceYesterdayCount = aiMatches.filter(
     (m) => Date.now() - new Date(m.computedAt).getTime() <= 24 * 60 * 60 * 1000,
   ).length;
-  const needsProfileInfoCount = filteredAiMatches.filter(
+  const needsProfileInfoCount = aiMatches.filter(
     (m) => m.missingFields.length > 0,
   ).length;
 
@@ -414,7 +430,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
   const handleRefreshMatches = async () => {
     try {
       await refreshMatchesMutation.mutateAsync();
-      toast.success("AI refresh queued. Updated matches should appear shortly.");
+      toast.success("Matches refreshed successfully.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Unable to refresh matches.");
     }
@@ -773,7 +789,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   </div>
                 </div>
 
-                {(aiMatchesLoading && !aiMatchesError) ? (
+                {(aiMatchesLoading && !aiMatchesFetched) ? (
                   <div className="space-y-4">
                     {[1, 2, 3].map((item) => (
                       <div key={`ai-skeleton-${item}`} className="h-52 animate-pulse rounded-xl border border-border bg-card" />
@@ -797,19 +813,80 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {filteredAiMatches.map((match) => (
-                      <DriverMatchCard
-                        key={match.jobId}
-                        match={match}
-                        isSaved={savedIds.includes(match.jobId)}
-                        pendingFeedback={feedbackPendingByJob[match.jobId] ?? null}
-                        onToggleSave={handleToggleSavedFromMatch}
-                        onFeedback={handleFeedback}
-                        onTrackEvent={handleTrackEvent}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    {/* Match count + current page indicator */}
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+                      <span>
+                        Showing {safeAiPage * AI_PAGE_SIZE + 1}–{Math.min((safeAiPage + 1) * AI_PAGE_SIZE, filteredAiMatches.length)} of {filteredAiMatches.length} matches
+                      </span>
+                      {totalAiPages > 1 && (
+                        <span>Page {safeAiPage + 1} of {totalAiPages}</span>
+                      )}
+                    </div>
+                    <div className="space-y-4">
+                      {paginatedAiMatches.map((match) => (
+                        <DriverMatchCard
+                          key={match.jobId}
+                          match={match}
+                          isSaved={savedIds.includes(match.jobId)}
+                          pendingFeedback={feedbackPendingByJob[match.jobId] ?? null}
+                          submittedFeedback={feedbackMap?.get(match.jobId) ?? null}
+                          onToggleSave={handleToggleSavedFromMatch}
+                          onFeedback={handleFeedback}
+                          onTrackEvent={handleTrackEvent}
+                        />
+                      ))}
+                    </div>
+                    {/* Pagination controls */}
+                    {totalAiPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 pt-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={safeAiPage === 0}
+                          onClick={() => { setAiPage(safeAiPage - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                        >
+                          <ChevronLeft className="h-4 w-4 mr-1" />
+                          Previous
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: totalAiPages }, (_, i) => i)
+                            .filter((i) => {
+                              // Show first, last, and pages within 2 of current
+                              if (i === 0 || i === totalAiPages - 1) return true;
+                              return Math.abs(i - safeAiPage) <= 2;
+                            })
+                            .map((i, idx, arr) => {
+                              const showEllipsis = idx > 0 && i - arr[idx - 1] > 1;
+                              return (
+                                <span key={i} className="flex items-center">
+                                  {showEllipsis && <span className="px-1 text-xs text-muted-foreground">...</span>}
+                                  <button
+                                    onClick={() => { setAiPage(i); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                                    className={`h-8 w-8 rounded text-sm font-medium transition-colors ${
+                                      i === safeAiPage
+                                        ? "bg-primary text-primary-foreground"
+                                        : "hover:bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {i + 1}
+                                  </button>
+                                </span>
+                              );
+                            })}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={safeAiPage >= totalAiPages - 1}
+                          onClick={() => { setAiPage(safeAiPage + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                        >
+                          Next
+                          <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
           </div>
         )}
