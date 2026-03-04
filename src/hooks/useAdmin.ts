@@ -325,8 +325,11 @@ export function useAdminBanUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { userId: string; ban: boolean }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not authenticated");
       const { data, error } = await withTimeout(supabase.functions.invoke("admin-actions", {
         body: { action: params.ban ? "ban" : "unban", user_id: params.userId },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       }), 15_000);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -344,8 +347,11 @@ export function useAdminDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { userId: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not authenticated");
       const { data, error } = await withTimeout(supabase.functions.invoke("admin-actions", {
         body: { action: "delete", user_id: params.userId },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       }), 15_000);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
