@@ -39,6 +39,9 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  Ban,
+  Trash2,
+  ShieldOff,
 } from "lucide-react";
 import {
   useAdminStats,
@@ -49,6 +52,8 @@ import {
   useAdminUpdateJobStatus,
   useChangeSubscriptionPlan,
   useToggleCompanyVerified,
+  useAdminBanUser,
+  useAdminDeleteUser,
 } from "@/hooks/useAdmin";
 import { PLANS, type Plan } from "@/hooks/useSubscription";
 import { formatDate } from "@/lib/dateUtils";
@@ -94,6 +99,15 @@ function AdminDashboardInner() {
   const updateJobStatus = useAdminUpdateJobStatus();
   const changePlan = useChangeSubscriptionPlan();
   const toggleVerified = useToggleCompanyVerified();
+  const banUser = useAdminBanUser();
+  const deleteUser = useAdminDeleteUser();
+
+  /* ban/delete confirmation dialog */
+  const [confirmAction, setConfirmAction] = useState<{
+    type: "ban" | "unban" | "delete";
+    userId: string;
+    userName: string;
+  } | null>(null);
 
   /* matching diagnostics data */
   const { data: rollout } = useMatchingRollout();
@@ -460,7 +474,9 @@ function AdminDashboardInner() {
                         >
                           {r === "all"
                             ? "All"
-                            : r.charAt(0).toUpperCase() + r.slice(1) + "s"}
+                            : r === "company"
+                              ? "Companies"
+                              : "Drivers"}
                         </button>
                       ))}
                     </div>
@@ -485,6 +501,11 @@ function AdminDashboardInner() {
                               {u.name}
                             </p>
                             {roleBadge(u.role)}
+                            {u.isBanned && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-bold text-red-500 uppercase">
+                                <Ban className="h-3 w-3" /> Banned
+                              </span>
+                            )}
                             {u.role === "company" &&
                               (() => {
                                 const sub = subscriptions.find(
@@ -569,6 +590,34 @@ function AdminDashboardInner() {
                                 }}
                               >
                                 Manage Plan
+                              </Button>
+                            </>
+                          )}
+                          {u.role !== "admin" && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={`text-xs h-7 ${u.isBanned ? "border-green-500/50 text-green-600" : "border-orange-500/50 text-orange-500"}`}
+                                onClick={() => setConfirmAction({
+                                  type: u.isBanned ? "unban" : "ban",
+                                  userId: u.id,
+                                  userName: u.name,
+                                })}
+                              >
+                                {u.isBanned ? <><ShieldOff className="h-3 w-3 mr-1" /> Unban</> : <><Ban className="h-3 w-3 mr-1" /> Ban</>}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 border-red-500/50 text-red-500 hover:bg-red-500/10"
+                                onClick={() => setConfirmAction({
+                                  type: "delete",
+                                  userId: u.id,
+                                  userName: u.name,
+                                })}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" /> Delete
                               </Button>
                             </>
                           )}
@@ -1218,6 +1267,69 @@ function AdminDashboardInner() {
                 }}
               >
                 {changePlan.isPending ? "Saving..." : "Confirm"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Ban / Delete confirmation dialog */}
+        <Dialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {confirmAction?.type === "delete"
+                  ? "Delete User"
+                  : confirmAction?.type === "ban"
+                    ? "Ban User"
+                    : "Unban User"}
+              </DialogTitle>
+              <DialogDescription>
+                {confirmAction?.type === "delete"
+                  ? `This will permanently delete "${confirmAction.userName}" and all their data (jobs, applications, subscriptions). This cannot be undone.`
+                  : confirmAction?.type === "ban"
+                    ? `This will ban "${confirmAction?.userName}" from the platform. They will not be able to log in.`
+                    : `This will unban "${confirmAction?.userName}" and restore their access.`}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setConfirmAction(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant={confirmAction?.type === "delete" ? "destructive" : "default"}
+                disabled={banUser.isPending || deleteUser.isPending}
+                onClick={() => {
+                  if (!confirmAction) return;
+                  if (confirmAction.type === "delete") {
+                    deleteUser.mutate(
+                      { userId: confirmAction.userId },
+                      {
+                        onSuccess: () => {
+                          toast.success(`${confirmAction.userName} has been deleted.`);
+                          setConfirmAction(null);
+                        },
+                        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to delete user"),
+                      }
+                    );
+                  } else {
+                    banUser.mutate(
+                      { userId: confirmAction.userId, ban: confirmAction.type === "ban" },
+                      {
+                        onSuccess: () => {
+                          toast.success(
+                            confirmAction.type === "ban"
+                              ? `${confirmAction.userName} has been banned.`
+                              : `${confirmAction.userName} has been unbanned.`
+                          );
+                          setConfirmAction(null);
+                        },
+                        onError: (err) => toast.error(err instanceof Error ? err.message : "Failed"),
+                      }
+                    );
+                  }
+                }}
+              >
+                {(banUser.isPending || deleteUser.isPending) ? "Processing..." : "Confirm"}
               </Button>
             </DialogFooter>
           </DialogContent>

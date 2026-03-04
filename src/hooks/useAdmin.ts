@@ -14,6 +14,7 @@ export interface AdminUser {
   yearsExp: string | null;
   companyName: string | null;
   isVerified: boolean;
+  isBanned: boolean;
   createdAt: string;
 }
 
@@ -68,6 +69,7 @@ function rowToAdminUser(row: Record<string, any>, extra?: { email?: string | nul
     yearsExp: extra?.yearsExp ?? null,
     companyName: extra?.companyName ?? null,
     isVerified: extra?.isVerified ?? false,
+    isBanned: row.is_banned ?? false,
     createdAt: row.created_at,
   };
 }
@@ -140,7 +142,7 @@ export function useAdminUsers() {
       const [profilesRes, driverRes, companyRes] = await Promise.all([
         supabase
           .from("profiles")
-          .select("id, name, role, created_at")
+          .select("id, name, role, is_banned, created_at")
           .order("created_at", { ascending: false }),
         supabase
           .from("driver_profiles_safe")
@@ -308,6 +310,46 @@ export function useChangeSubscriptionPlan() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+    },
+  });
+}
+
+/** Admin bans or unbans a user */
+export function useAdminBanUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { userId: string; ban: boolean }) => {
+      const { data, error } = await supabase.functions.invoke("admin-actions", {
+        body: { action: params.ban ? "ban" : "unban", user_id: params.userId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+    },
+  });
+}
+
+/** Admin deletes a user and all their data */
+export function useAdminDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { userId: string }) => {
+      const { data, error } = await supabase.functions.invoke("admin-actions", {
+        body: { action: "delete", user_id: params.userId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-stats"] });
+      qc.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+      qc.invalidateQueries({ queryKey: ["admin-jobs"] });
     },
   });
 }
