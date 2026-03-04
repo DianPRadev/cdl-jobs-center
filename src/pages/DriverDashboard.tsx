@@ -264,6 +264,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
     },
     enabled: !!user?.id,
     staleTime: 30_000,
+    refetchOnMount: "always",
   });
 
   // Profile form state — initialized from DB once loaded

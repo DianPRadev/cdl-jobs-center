@@ -94,8 +94,9 @@ const Drivers = () => {
   }, [favorites, favoritesKey]);
 
   const { data: drivers = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["driver-directory"],
+    queryKey: ["driver-directory", user?.id],
     enabled: !!user && (user.role === "company" || user.role === "admin"),
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("driver_profiles_safe")
@@ -301,7 +302,7 @@ const Drivers = () => {
           <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
             <div className="w-1 h-5 bg-primary shrink-0" />
             <h2 className="font-display font-bold text-base">
-              Drivers <span className="text-muted-foreground font-normal text-sm ml-1">({filtered.length} found)</span>
+              Drivers {!isLoading && <span className="text-muted-foreground font-normal text-sm ml-1">({filtered.length} found)</span>}
             </h2>
           </div>
 

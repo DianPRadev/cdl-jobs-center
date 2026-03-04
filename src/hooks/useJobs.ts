@@ -55,6 +55,7 @@ export function useActiveJobs() {
       return attachLogos((data ?? []) as Record<string, unknown>[]);
     },
     staleTime: 60_000,
+    refetchOnMount: "always",
   });
   return { jobs: data ?? [], isLoading, error, refetch };
 }
@@ -80,6 +81,7 @@ export function useJobById(jobId: string | undefined) {
       return rowToJob({ ...data, company_profiles: cp ?? null });
     },
     enabled: !!jobId,
+    refetchOnMount: "always",
   });
   return { job: data ?? null, isLoading, isError };
 }
@@ -101,6 +103,7 @@ export function useJobs(companyId: string) {
       return attachLogos((data ?? []) as Record<string, unknown>[]);
     },
     enabled: !!companyId,
+    refetchOnMount: "always",
   });
 
   const addMutation = useMutation({

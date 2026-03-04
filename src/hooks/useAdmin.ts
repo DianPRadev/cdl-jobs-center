@@ -138,6 +138,7 @@ export function useAdminStats() {
 export function useAdminUsers() {
   return useQuery({
     queryKey: ["admin-users"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const [profilesRes, driverRes, companyRes] = await Promise.all([
         supabase

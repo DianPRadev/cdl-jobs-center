@@ -60,6 +60,7 @@ const Companies = () => {
   } = useQuery({
     queryKey: ["companies-directory-v2"],
     retry: 1,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("company_profiles")

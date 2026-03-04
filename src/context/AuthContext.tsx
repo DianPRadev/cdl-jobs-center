@@ -208,10 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    // Clear local state first so the UI updates immediately
+    setUser(null);
     localStorage.removeItem(ROLE_CACHE_KEY);
     queryClient.clear();
     clearAllApplicationDrafts();
+    // Then sign out from Supabase (fire-and-forget — local state is already cleared)
+    supabase.auth.signOut().catch(() => {});
   }, [queryClient]);
 
   const authValue = useMemo(

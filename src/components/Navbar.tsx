@@ -25,7 +25,6 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/auth";
 import { toast } from "sonner";
-import { withTimeout } from "@/lib/withTimeout";
 import { useUnreadCount } from "@/hooks/useMessages";
 import { useUnreadNotificationCount } from "@/hooks/useNotifications";
 import { useQuery } from "@tanstack/react-query";
@@ -293,9 +292,9 @@ const Navbar = () => {
   const confirmSignOut = async () => {
     setSigningOut(true);
     try {
-      await withTimeout(signOut(), 10_000);
       setSignOutOpen(false);
       navigate("/");
+      await signOut();
     } catch {
       toast.error("Sign out failed. Please try again.");
     } finally {
