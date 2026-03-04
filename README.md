@@ -1,73 +1,45 @@
-# Welcome to your Lovable project
+# CDL Jobs Center
 
-## Project info
+A job board platform connecting CDL drivers with trucking companies across the United States, featuring AI-powered driver-job matching.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Tech Stack
 
-## How can I edit this code?
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui
+- **Backend:** Supabase (PostgreSQL, Auth, Storage, Edge Functions)
+- **Data Fetching:** @tanstack/react-query
+- **Payments:** Stripe (subscriptions)
+- **Email:** Brevo (transactional notifications)
+- **AI Matching:** HuggingFace Inference API (semantic embeddings)
+- **Error Tracking:** Sentry
+- **Hosting:** Vercel
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+- Driver registration and profile management
+- Company job posting and applicant pipeline (drag-and-drop)
+- AI-powered driver-job matching with score breakdowns
+- Subscription plans for companies (Starter, Growth, Unlimited)
+- Real-time notifications (in-app + email)
+- Driver verification system
+- Company directory and driver directory
+- Admin dashboard
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Local Development
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+git clone https://github.com/DianPRadev/cdl-jobs-center.git
+cd cdl-jobs-center
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Requires a `.env.local` file with:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-**Use GitHub Codespaces**
+## Deployment
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Deployed on Vercel with automatic builds from the `main` branch. Database and edge functions hosted on Supabase.
