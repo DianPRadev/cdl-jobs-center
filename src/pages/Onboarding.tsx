@@ -20,6 +20,7 @@ const Onboarding = () => {
   const navigate = useNavigate();
   const [saving, setSaving] = useState<RoleChoice | null>(null);
   const [checking, setChecking] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
 
   // Guard: redirect away if user already completed onboarding
   useEffect(() => {
@@ -69,8 +70,9 @@ const Onboarding = () => {
 
       toast.success(role === "driver" ? "Welcome, driver!" : "Welcome aboard!");
 
-      // Brief pause so the user sees the success feedback before navigating
-      await new Promise((r) => setTimeout(r, 1500));
+      // Show transition screen before navigating
+      setRedirecting(true);
+      await new Promise((r) => setTimeout(r, 2000));
 
       // Force a page reload so AuthContext re-fetches the updated profile
       window.location.href = role === "company" ? "/dashboard" : "/driver-dashboard";
@@ -88,6 +90,15 @@ const Onboarding = () => {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Spinner />
+      </div>
+    );
+  }
+
+  if (redirecting) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-lg font-medium text-muted-foreground">Setting up your account...</p>
       </div>
     );
   }

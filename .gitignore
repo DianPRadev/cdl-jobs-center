@@ -1,3 +1,6 @@
+# One-time migration dump
+all-migrations.sql
+
 # Logs
 logs
 *.log
