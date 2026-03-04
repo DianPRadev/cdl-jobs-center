@@ -14,7 +14,7 @@ ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
 
 -- Insert the Supabase project URL (public, safe to store)
 INSERT INTO app_config (key, value)
-VALUES ('supabase_url', 'https://ivgfgdyfafuqusrdxzij.supabase.co')
+VALUES ('supabase_url', 'https://dlhtuqsdooltinqmyrgw.supabase.co')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- ── 2. Update notify_user to read from app_config ───────────────────────────

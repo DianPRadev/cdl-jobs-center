@@ -10,7 +10,7 @@
 
 -- ── 2. MANUAL STEP (run in Supabase SQL Editor, not migrations): ────────────
 -- These settings let notify_user() call the Edge Function for email delivery.
--- ALTER DATABASE postgres SET app.settings.supabase_url = 'https://ivgfgdyfafuqusrdxzij.supabase.co';
+-- ALTER DATABASE postgres SET app.settings.supabase_url = 'https://dlhtuqsdooltinqmyrgw.supabase.co';
 -- ALTER DATABASE postgres SET app.settings.service_role_key = '<YOUR_SERVICE_ROLE_KEY>';
 
 -- ── 3. Fix welcome trigger: skip users who need onboarding ──────────────────

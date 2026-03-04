@@ -13,7 +13,7 @@ SELECT cron.schedule(
   '*/5 * * * *',
   $$
   SELECT net.http_post(
-    url := 'https://ivgfgdyfafuqusrdxzij.supabase.co/functions/v1/match-recompute',
+    url := 'https://dlhtuqsdooltinqmyrgw.supabase.co/functions/v1/match-recompute',
     headers := '{"Authorization": "Bearer match-recompute-cron-secret-2026", "Content-Type": "application/json"}'::jsonb,
     body := '{}'::jsonb
   );
