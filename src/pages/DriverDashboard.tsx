@@ -668,7 +668,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-semibold text-base border-l-4 border-primary pl-3">Recent Applications</h2>
                 {totalApps > 3 && (
-                  <button onClick={() => setActiveTab("applications")} className="text-sm text-primary underline hover:opacity-80">
+                  <button onClick={() => switchTab("applications")} className="text-sm text-primary underline hover:opacity-80">
                     View all
                   </button>
                 )}
@@ -712,7 +712,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
               <div className="flex flex-wrap gap-3">
                 <Button asChild><Link to="/jobs">Browse Jobs</Link></Button>
                 <Button asChild variant="outline"><Link to="/apply">General Application</Link></Button>
-                <Button variant="outline" onClick={() => setActiveTab("profile")}>Edit My Profile</Button>
+                <Button variant="outline" onClick={() => switchTab("profile")}>Edit My Profile</Button>
               </div>
             </div>
           </div>
@@ -1212,7 +1212,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
               <div className="flex items-center gap-3 ml-auto">
               <Button
                 onClick={handleSaveProfile}
-                disabled={profileSaveStatus === "saving" || !hasUnsavedChanges && isProfileSaved}
+                disabled={profileSaveStatus === "saving" || (!hasUnsavedChanges && isProfileSaved)}
                 className={isProfileSaved ? "px-6 bg-green-600 text-white hover:bg-green-600 focus-visible:ring-green-600" : "px-6"}
               >
                 {profileSaveStatus === "saving" ? (

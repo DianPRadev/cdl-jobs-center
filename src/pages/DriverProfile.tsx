@@ -23,7 +23,7 @@ const YEARS_EXP_LABELS: Record<string, string> = {
   "2-5": "2-5 years",
   "3-5": "3-5 years",
   "5-10": "5-10 years",
-  "5+": "10+ years",
+  "5+": "5+ years",
   "10+": "10+ years",
 };
 

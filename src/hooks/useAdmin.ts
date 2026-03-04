@@ -507,7 +507,7 @@ export function useToggleCompanyVerified() {
       qc.invalidateQueries({ queryKey: ["companies-directory-v2"] });
       qc.invalidateQueries({ queryKey: ["company-profile", vars.companyId] });
       qc.invalidateQueries({ queryKey: ["company-logo", vars.companyId] });
-      qc.invalidateQueries({ queryKey: ["verification-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-verification-requests"] });
     },
   });
 }

@@ -191,8 +191,8 @@ const Drivers = () => {
                 <p className="font-display font-semibold text-lg">Company Access Only</p>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm">
                   {user?.role === "driver"
-                    ? "The driver directory is available to company accounts only. Your driver account does not have access to this section."
-                    : "The driver directory is available exclusively to verified company accounts. Sign in or register as a company to browse driver profiles."}
+                    ? "The driver directory is available to company and admin accounts only. Your driver account does not have access to this section."
+                    : "The driver directory is available to company and admin accounts. Sign in or register as a company to browse driver profiles."}
                 </p>
               </div>
               {!user && (

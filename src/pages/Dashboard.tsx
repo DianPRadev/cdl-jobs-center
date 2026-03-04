@@ -848,7 +848,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
         setCompanyGoal(loadedProfile.companyGoal);
         setLastSavedSnapshot(snapshotCompanyProfile(loadedProfile));
       })
-      .catch(() => {});
+      .catch((err: unknown) => { console.error("Failed to load company profile:", err); });
   }, [user]);
 
   useEffect(() => {
@@ -974,15 +974,27 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
     const newUrl = publicUrl + "?t=" + Date.now();
     setProfileLogo(newUrl);
     // Persist to DB immediately so navbar + public profile update without clicking Save
-    await supabase.from("company_profiles").upsert({ id: user!.id, logo_url: newUrl, updated_at: new Date().toISOString() });
-    qc.invalidateQueries({ queryKey: ["company-logo", user!.id] });
-    toast.success("Logo updated.");
+    try {
+      const { error: upsertErr } = await supabase.from("company_profiles").upsert({ id: user!.id, logo_url: newUrl, updated_at: new Date().toISOString() });
+      if (upsertErr) throw upsertErr;
+      qc.invalidateQueries({ queryKey: ["company-logo", user!.id] });
+      toast.success("Logo updated.");
+    } catch (err) {
+      console.error("Logo save failed:", err);
+      toast.error("Logo uploaded but failed to save to profile.");
+    }
   };
 
   const handleRemoveLogo = async () => {
     setProfileLogo("");
-    await supabase.from("company_profiles").upsert({ id: user!.id, logo_url: "", updated_at: new Date().toISOString() });
-    qc.invalidateQueries({ queryKey: ["company-logo", user!.id] });
+    try {
+      const { error: upsertErr } = await supabase.from("company_profiles").upsert({ id: user!.id, logo_url: "", updated_at: new Date().toISOString() });
+      if (upsertErr) throw upsertErr;
+      qc.invalidateQueries({ queryKey: ["company-logo", user!.id] });
+    } catch (err) {
+      console.error("Logo removal failed:", err);
+      toast.error("Failed to remove logo from profile.");
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -1513,7 +1525,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                           Remove logo
                         </button>
                       )}
-                      <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Max 2MB.</p>
+                      <p className="text-xs text-muted-foreground">JPEG, PNG, WebP or GIF. Max 5MB.</p>
                     </div>
                   </div>
                 </div>

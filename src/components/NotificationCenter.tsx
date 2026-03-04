@@ -27,7 +27,7 @@ import { timeAgo } from "@/lib/dateUtils";
 
 interface NotificationCenterProps {
   userId: string;
-  role?: "driver" | "company";
+  role?: "driver" | "company" | "admin";
 }
 
 const typeIcons: Record<string, typeof Bell> = {
@@ -158,7 +158,7 @@ export function NotificationCenter({ userId, role }: NotificationCenterProps) {
             )}
             <button
               onClick={() => {
-                const path = role === "driver" ? "/driver-dashboard" : "/dashboard";
+                const path = role === "driver" ? "/driver-dashboard" : role === "admin" ? "/admin" : "/dashboard";
                 navigate(`${path}?tab=profile&section=notifications`);
                 setOpen(false);
               }}

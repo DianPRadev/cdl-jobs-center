@@ -14,6 +14,3 @@ export interface Job {
   status?: "Draft" | "Active" | "Paused" | "Closed";
   logoUrl?: string;    // company logo URL from Supabase Storage
 }
-
-// Jobs are loaded from the database — no seed data
-export const SEED_JOBS: Job[] = [];

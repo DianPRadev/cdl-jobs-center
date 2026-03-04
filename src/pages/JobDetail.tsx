@@ -129,7 +129,7 @@ const JobDetail = () => {
           </p>
           <button
             type="button"
-            onClick={() => { window.history.length > 1 ? navigate(-1) : navigate("/jobs"); }}
+            onClick={() => { if (window.history.length > 1) navigate(-1); else navigate("/jobs"); }}
             className="inline-flex items-center gap-1.5 text-primary hover:text-primary/70 transition-colors shrink-0 text-sm font-medium"
             aria-label="Go back"
           >

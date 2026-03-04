@@ -152,8 +152,12 @@ const Jobs = () => {
       return;
     }
     const wasSaved = isSaved(id);
-    await toggle(id);
-    toast.success(wasSaved ? `Removed from saved jobs` : `Saved ${company}`);
+    try {
+      await toggle(id);
+      toast.success(wasSaved ? `Removed from saved jobs` : `Saved ${company}`);
+    } catch {
+      toast.error("Failed to update saved jobs.");
+    }
   };
 
   const pageTitle = freightType !== "all" ? freightType : "All Jobs";

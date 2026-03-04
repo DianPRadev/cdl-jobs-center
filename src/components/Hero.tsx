@@ -137,7 +137,7 @@ const Hero = () => {
                 muted
                 loop
                 playsInline
-                preload="none"
+                preload="metadata"
               />
             </div>
           </div>

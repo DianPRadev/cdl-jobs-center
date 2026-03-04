@@ -109,6 +109,7 @@ export function useSubmitVerification() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["verification-request", vars.companyId] });
+      qc.invalidateQueries({ queryKey: ["admin-verification-requests"] });
     },
   });
 }

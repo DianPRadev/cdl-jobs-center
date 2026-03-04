@@ -458,7 +458,7 @@ const Navbar = () => {
             ) : user ? (
               <>
                 <Suspense fallback={null}>
-                  <NotificationCenter userId={user.id} role={user.role as "driver" | "company"} />
+                  <NotificationCenter userId={user.id} role={user.role as "driver" | "company" | "admin"} />
                 </Suspense>
                 {/* Profile dropdown */}
                 <div className="relative" ref={profileRef}>

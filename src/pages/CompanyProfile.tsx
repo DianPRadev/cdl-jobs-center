@@ -238,6 +238,7 @@ const CompanyProfile = () => {
                   {user?.role === "driver" && (
                     <EasyApplyDialog
                       companyName={company.company_name}
+                      companyId={id}
                       trigger={
                         <Button variant="outline" size="sm" className="w-full">
                           <Zap className="h-3.5 w-3.5 mr-1.5" />

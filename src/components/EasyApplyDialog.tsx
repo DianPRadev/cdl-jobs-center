@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/auth";
 import { useDriverProfile } from "@/hooks/useDriverProfile";
@@ -12,6 +13,8 @@ import { useDriverProfile } from "@/hooks/useDriverProfile";
 type EasyApplyDialogProps = {
   trigger: React.ReactNode;
   companyName?: string;
+  companyId?: string;
+  jobId?: string;
 };
 
 type OffOnToggleProps = {
@@ -23,8 +26,8 @@ const OffOnToggle = ({ checked, onChange }: OffOnToggleProps) => (
   <div role="switch" aria-checked={checked} className="inline-flex overflow-hidden rounded-sm border border-border">
     <button
       type="button"
-      tabIndex={-1}
       onClick={() => onChange(false)}
+      aria-pressed={!checked}
       className={cn(
         "h-7 w-14 text-center text-[11px] font-semibold transition-colors",
         !checked ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
@@ -34,8 +37,8 @@ const OffOnToggle = ({ checked, onChange }: OffOnToggleProps) => (
     </button>
     <button
       type="button"
-      tabIndex={-1}
       onClick={() => onChange(true)}
+      aria-pressed={checked}
       className={cn(
         "h-7 w-14 text-center text-[11px] font-semibold transition-colors",
         checked ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
@@ -46,8 +49,9 @@ const OffOnToggle = ({ checked, onChange }: OffOnToggleProps) => (
   </div>
 );
 
-const EasyApplyDialog = ({ trigger, companyName = "General Application" }: EasyApplyDialogProps) => {
+const EasyApplyDialog = ({ trigger, companyName = "General Application", companyId, jobId }: EasyApplyDialogProps) => {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const { profile } = useDriverProfile(user?.id ?? "");
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +96,8 @@ const EasyApplyDialog = ({ trigger, companyName = "General Application" }: EasyA
     setSubmitting(true);
     const insertPromise = supabase.from("applications").insert({
       driver_id: user.id,
+      company_id: companyId || null,
+      job_id: jobId || null,
       company_name: companyName,
       first_name: firstName,
       last_name: lastName,
@@ -118,6 +124,9 @@ const EasyApplyDialog = ({ trigger, companyName = "General Application" }: EasyA
         return;
       }
       toast.success(`Application sent to ${companyName}!`);
+      qc.invalidateQueries({ queryKey: ["driver-applications"] });
+      qc.invalidateQueries({ queryKey: ["has-applied-job"] });
+      qc.invalidateQueries({ queryKey: ["company-applications"] });
       setOpen(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Submission failed. Please try again.";
