@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { withTimeout } from "@/lib/withTimeout";
 
 export type MessageDeliveryStatus =
   | "sent"
@@ -144,7 +145,7 @@ export function useSendMessage() {
       senderRole: "driver" | "company";
       body: string;
     }) => {
-      const { data, error } = await supabase
+      const { data, error } = await withTimeout(supabase
         .from("messages")
         .insert({
           application_id: params.applicationId,
@@ -153,7 +154,7 @@ export function useSendMessage() {
           body: params.body,
         })
         .select("*")
-        .single();
+        .single(), 15_000);
       if (error) throw error;
       return rowToMessage(data as Record<string, unknown>);
     },
@@ -205,12 +206,12 @@ export function useMarkRead() {
 
   return useMutation({
     mutationFn: async (params: { applicationId: string; userId: string }) => {
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("messages")
         .update({ read_at: new Date().toISOString() })
         .eq("application_id", params.applicationId)
         .neq("sender_id", params.userId)
-        .is("read_at", null);
+        .is("read_at", null), 15_000);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {

@@ -63,7 +63,7 @@ const Hero = () => {
             </h1>
 
             <p
-              className="animate-hero-fade-up text-lg md:text-xl text-muted-foreground mb-8 max-w-lg"
+              className="animate-hero-fade-up text-lg md:text-xl text-secondary-foreground/80 mb-8 max-w-lg"
               style={{ animationDelay: "0.2s" }}
             >
               {isCompany
@@ -104,13 +104,13 @@ const Hero = () => {
               className="animate-hero-fade-in mt-12 flex items-center gap-x-8 gap-y-3 flex-wrap border-t border-border/20 pt-8"
               style={{ animationDelay: "0.5s" }}
             >
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-secondary-foreground/70">
                 <Shield className="h-5 w-5 text-primary" />
                 <span className="text-sm">
                   {isCompany ? "Verified Drivers" : "Verified Companies"}
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-secondary-foreground/70">
                 <Users className="h-5 w-5 text-primary" />
                 <span className="text-sm">
                   {isCompany
@@ -118,7 +118,7 @@ const Hero = () => {
                     : "2,000+ Drivers Placed"}
                 </span>
               </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-secondary-foreground/70">
                 <Zap className="h-5 w-5 text-primary" />
                 <span className="text-sm">Instant Matching</span>
               </div>

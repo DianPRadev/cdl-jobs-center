@@ -132,6 +132,7 @@ function AdminDashboardInner() {
 
   const { data: matchingStats } = useQuery({
     queryKey: ["admin-matching-stats"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const [djRes, cdRes, pendingRes, errorRes] = await Promise.all([
         supabase.from("driver_job_match_scores").select("*", { count: "exact", head: true }),
@@ -151,6 +152,7 @@ function AdminDashboardInner() {
 
   const { data: queueErrors = [] } = useQuery({
     queryKey: ["admin-matching-queue-errors"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("matching_recompute_queue")
@@ -387,7 +389,7 @@ function AdminDashboardInner() {
           </button>
           <button className={tabClass("verification")} onClick={() => setActiveTab("verification")}>
             <span className="flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5" /> Verification
+              <ShieldCheck className="h-3.5 w-3.5" /> Verification{pendingVerifications.length > 0 && ` (${pendingVerifications.length})`}
             </span>
           </button>
         </div>

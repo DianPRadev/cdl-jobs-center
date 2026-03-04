@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/withTimeout";
 
 /** Convert a stored document value (path or legacy public URL) to a signed URL */
 export async function getVerificationDocSignedUrl(storedValue: string): Promise<string | null> {
@@ -62,6 +63,7 @@ function rowToRequest(row: Record<string, any>): VerificationRequest {
 export function useVerificationRequest(companyId: string | undefined) {
   return useQuery({
     queryKey: ["verification-request", companyId],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("verification_requests")
@@ -93,7 +95,7 @@ export function useSubmitVerification() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: SubmitVerificationPayload) => {
-      const { error } = await supabase.from("verification_requests").insert({
+      const { error } = await withTimeout(supabase.from("verification_requests").insert({
         company_id: payload.companyId,
         dot_number: payload.dotNumber || null,
         business_ein: payload.businessEin || null,
@@ -102,7 +104,7 @@ export function useSubmitVerification() {
         notes: payload.notes || null,
         document_urls: payload.documentUrls,
         status: "pending",
-      });
+      }), 15_000);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
@@ -117,6 +119,7 @@ export function useSubmitVerification() {
 export function useAllVerificationRequests() {
   return useQuery({
     queryKey: ["admin-verification-requests"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("verification_requests")
@@ -140,7 +143,7 @@ export function useReviewVerification() {
       reviewedBy: string;
     }) => {
       // Update the request
-      const { error: reqErr } = await supabase
+      const { error: reqErr } = await withTimeout(supabase
         .from("verification_requests")
         .update({
           status: params.decision,
@@ -149,23 +152,23 @@ export function useReviewVerification() {
           rejection_reason: params.decision === "rejected" ? (params.rejectionReason || null) : null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", params.requestId);
+        .eq("id", params.requestId), 15_000);
       if (reqErr) throw reqErr;
 
       // If approved, set is_verified on company_profiles
       if (params.decision === "approved") {
-        const { error: compErr } = await supabase
+        const { error: compErr } = await withTimeout(supabase
           .from("company_profiles")
           .update({ is_verified: true })
-          .eq("id", params.companyId);
+          .eq("id", params.companyId), 15_000);
         if (compErr) throw compErr;
       }
       // If rejected, ensure is_verified stays false
       if (params.decision === "rejected") {
-        const { error: compErr } = await supabase
+        const { error: compErr } = await withTimeout(supabase
           .from("company_profiles")
           .update({ is_verified: false })
-          .eq("id", params.companyId);
+          .eq("id", params.companyId), 15_000);
         if (compErr) throw compErr;
       }
     },

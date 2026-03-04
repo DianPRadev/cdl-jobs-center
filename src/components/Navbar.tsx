@@ -248,6 +248,7 @@ const Navbar = () => {
   // Company logo + verification status for navbar
   const { data: companyNavData } = useQuery({
     queryKey: ["company-logo", user?.id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data } = await supabase
         .from("company_profiles")

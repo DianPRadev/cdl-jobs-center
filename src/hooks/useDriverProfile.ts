@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/withTimeout";
 
 export interface DriverProfile {
   firstName: string;
@@ -26,6 +27,7 @@ export function useDriverProfile(driverId: string) {
 
   const { data, isLoading } = useQuery({
     queryKey: key,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("driver_profiles")
@@ -79,11 +81,11 @@ export function useDriverProfile(driverId: string) {
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("driver_profiles").upsert(fullPayload);
+      const { error } = await withTimeout(supabase.from("driver_profiles").upsert(fullPayload), 15_000);
       if (!error) return;
 
       // Backward-compatible fallback for environments missing newer columns.
-      const { error: fallbackError } = await supabase.from("driver_profiles").upsert({
+      const { error: fallbackError } = await withTimeout(supabase.from("driver_profiles").upsert({
         id: driverId,
         first_name: profile.firstName,
         last_name: profile.lastName,
@@ -97,7 +99,7 @@ export function useDriverProfile(driverId: string) {
         date_of_birth: profile.dateOfBirth,
         about: profile.about,
         updated_at: new Date().toISOString(),
-      });
+      }), 15_000);
 
       if (fallbackError) throw fallbackError;
     },

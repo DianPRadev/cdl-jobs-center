@@ -691,6 +691,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const { data: aiMatchCount = null } = useQuery({
     queryKey: ["company-match-count", user!.id],
     enabled: !!user,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data } = await supabase
         .from("company_driver_match_scores")
@@ -779,6 +780,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const appsKey = ["company-applications", user!.id];
   const { data: applications = [], refetch: refetchApps } = useQuery({
     queryKey: appsKey,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("applications")

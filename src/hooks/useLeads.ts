@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/withTimeout";
 
 export interface Lead {
   id: string;
@@ -42,6 +43,7 @@ function rowToLead(row: Record<string, any>): Lead {
 export function useLeads(companyId?: string) {
   return useQuery({
     queryKey: ["leads", companyId ?? "all"],
+    refetchOnMount: "always",
     queryFn: async () => {
       let query = supabase
         .from("leads")
@@ -75,9 +77,9 @@ export function useSyncLeads() {
 
   return useMutation({
     mutationFn: async (): Promise<SyncResult> => {
-      const { data, error } = await supabase.functions.invoke("sync-leads", {
+      const { data, error } = await withTimeout(supabase.functions.invoke("sync-leads", {
         body: {},
-      });
+      }), 30_000);
 
       if (error) {
         // Extract actual error message from FunctionsHttpError if available
@@ -118,10 +120,10 @@ export function useUpdateLeadStatus() {
 
   return useMutation({
     mutationFn: async (params: { leadId: string; status: Lead["status"] }) => {
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("leads")
         .update({ status: params.status })
-        .eq("id", params.leadId);
+        .eq("id", params.leadId), 15_000);
       if (error) throw error;
     },
     // Optimistic update — use fuzzy key matching since the actual key includes companyId

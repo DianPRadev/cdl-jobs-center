@@ -46,6 +46,7 @@ const DriverProfile = () => {
   const { data: hasApplication = false } = useQuery({
     queryKey: ["driver-has-application", id, user?.id],
     enabled: !!id && !!user && user.role === "company",
+    refetchOnMount: "always",
     queryFn: async () => {
       const { count, error } = await supabase
         .from("applications")
@@ -60,6 +61,7 @@ const DriverProfile = () => {
   const { data: driver, isLoading, isError, error } = useQuery({
     queryKey: ["driver-profile-public", id],
     enabled: !!id && !!user && (user.role === "company" || user.role === "admin"),
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("driver_profiles_safe")

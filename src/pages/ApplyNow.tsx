@@ -216,6 +216,7 @@ const ApplyNow = () => {
   // Fetch job IDs the driver already applied to, so we can filter them out
   const { data: appliedJobIds = [] } = useQuery({
     queryKey: ["applied-job-ids", user?.id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data } = await supabase
         .from("applications")

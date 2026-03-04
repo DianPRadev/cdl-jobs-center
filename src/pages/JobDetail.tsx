@@ -32,6 +32,7 @@ const JobDetail = () => {
   // Fetch company profile (phone, address, website, logo)
   const { data: companyProfile } = useQuery({
     queryKey: ["company_profile_detail", job?.companyId],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data } = await supabase
         .from("company_profiles")
@@ -47,6 +48,7 @@ const JobDetail = () => {
   const isDriver = user?.role === "driver";
   const { data: hasApplied = false } = useQuery({
     queryKey: ["has-applied-job", user?.id, id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { count, error } = await supabase
         .from("applications")

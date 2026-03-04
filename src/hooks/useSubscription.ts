@@ -43,6 +43,7 @@ function rowToSub(row: Record<string, any>): Subscription {
 export function useSubscription(companyId: string | undefined) {
   return useQuery({
     queryKey: ["subscription", companyId],
+    refetchOnMount: "always",
     queryFn: async () => {
       // Try to fetch existing
       const { data, error } = await supabase

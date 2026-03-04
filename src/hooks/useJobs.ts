@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Job } from "@/data/jobs";
+import { withTimeout } from "@/lib/withTimeout";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToJob(row: Record<string, any>): Job {
@@ -121,7 +122,7 @@ export function useJobs(companyId: string) {
         pay: job.pay,
         status: job.status ?? "Active",
       };
-      const { error } = await supabase.from("jobs").insert(payload);
+      const { error } = await withTimeout(supabase.from("jobs").insert(payload), 15_000);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
@@ -139,7 +140,7 @@ export function useJobs(companyId: string) {
       if (data.location !== undefined) updates.location = data.location;
       if (data.pay !== undefined) updates.pay = data.pay;
       if (data.status !== undefined) updates.status = data.status;
-      const { error } = await supabase.from("jobs").update(updates).eq("id", id);
+      const { error } = await withTimeout(supabase.from("jobs").update(updates).eq("id", id), 15_000);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
@@ -147,7 +148,7 @@ export function useJobs(companyId: string) {
 
   const removeMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("jobs").delete().eq("id", id);
+      const { error } = await withTimeout(supabase.from("jobs").delete().eq("id", id), 15_000);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),

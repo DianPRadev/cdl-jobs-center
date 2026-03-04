@@ -31,18 +31,21 @@ const Onboarding = () => {
     }
 
     const check = async () => {
-      const { data } = await withTimeout(
-        supabase
-          .from("profiles")
-          .select("needs_onboarding")
-          .eq("id", user.id)
-          .maybeSingle(),
-        10_000
-      );
+      try {
+        const { data } = await withTimeout(
+          supabase
+            .from("profiles")
+            .select("needs_onboarding")
+            .eq("id", user.id)
+            .maybeSingle(),
+          10_000
+        );
 
-      if (!data?.needs_onboarding) {
-        // Already onboarded — go to dashboard
-        navigate(user.role === "company" ? "/dashboard" : "/driver-dashboard", { replace: true });
+        if (!data?.needs_onboarding) {
+          navigate(user.role === "company" ? "/dashboard" : "/driver-dashboard", { replace: true });
+        }
+      } catch {
+        // Profile check failed — show role cards so user isn't stuck
       }
       setChecking(false);
     };
@@ -70,12 +73,11 @@ const Onboarding = () => {
 
       toast.success(role === "driver" ? "Welcome, driver!" : "Welcome aboard!");
 
-      // Show transition screen before navigating
+      // Brief transition screen before navigating
       setRedirecting(true);
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 800));
 
-      // Force a page reload so AuthContext re-fetches the updated profile
-      window.location.href = role === "company" ? "/dashboard" : "/driver-dashboard";
+      navigate(role === "company" ? "/dashboard" : "/driver-dashboard", { replace: true });
     } catch (err) {
       console.error("[Onboarding] handleChoice failed:", err);
       const msg = err && typeof err === "object" && "message" in err
@@ -96,7 +98,7 @@ const Onboarding = () => {
 
   if (redirecting) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
         <p className="text-lg font-medium text-muted-foreground">Setting up your account...</p>
       </div>
@@ -137,7 +139,13 @@ const Onboarding = () => {
               type="button"
               disabled={saving !== null}
               onClick={() => handleChoice("driver")}
-              className="group relative flex flex-col items-center gap-4 rounded-xl border-2 border-border bg-card p-8 shadow-sm transition-all hover:border-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
+              className={`group relative flex flex-col items-center gap-4 rounded-xl border-2 bg-card p-8 shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                saving === "driver"
+                  ? "border-primary shadow-md"
+                  : saving !== null
+                    ? "opacity-40 cursor-not-allowed border-border"
+                    : "border-border hover:border-primary hover:shadow-md"
+              }`}
             >
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                 {saving === "driver" ? (
@@ -159,7 +167,13 @@ const Onboarding = () => {
               type="button"
               disabled={saving !== null}
               onClick={() => handleChoice("company")}
-              className="group relative flex flex-col items-center gap-4 rounded-xl border-2 border-border bg-card p-8 shadow-sm transition-all hover:border-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
+              className={`group relative flex flex-col items-center gap-4 rounded-xl border-2 bg-card p-8 shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                saving === "company"
+                  ? "border-primary shadow-md"
+                  : saving !== null
+                    ? "opacity-40 cursor-not-allowed border-border"
+                    : "border-border hover:border-primary hover:shadow-md"
+              }`}
             >
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                 {saving === "company" ? (

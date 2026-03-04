@@ -50,6 +50,7 @@ const CompanyProfile = () => {
   // Fetch company profile from Supabase
   const { data: company, isLoading, isError } = useQuery({
     queryKey: ["company-profile", id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("company_profiles")
@@ -66,6 +67,7 @@ const CompanyProfile = () => {
   const isDriver = user?.role === "driver";
   const { data: hasApplied = false } = useQuery({
     queryKey: ["has-applied", user?.id, id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { count, error } = await supabase
         .from("applications")
@@ -83,6 +85,7 @@ const CompanyProfile = () => {
   // Fetch company's active jobs
   const { data: jobs = [] } = useQuery({
     queryKey: ["company-jobs", id],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")

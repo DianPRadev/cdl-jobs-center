@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/withTimeout";
 
 export interface Notification {
   id: string;
@@ -30,6 +31,7 @@ function rowToNotification(row: Record<string, any>): Notification {
 export function useNotifications(userId: string | undefined, limit = 30) {
   return useQuery({
     queryKey: ["notifications", userId, limit],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("notifications")
@@ -50,6 +52,7 @@ export function useNotifications(userId: string | undefined, limit = 30) {
 export function useUnreadNotificationCount(userId: string | undefined) {
   return useQuery({
     queryKey: ["unread-notification-count", userId],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { count, error } = await supabase
         .from("notifications")
@@ -71,12 +74,10 @@ export function useMarkNotificationsRead() {
 
   return useMutation({
     mutationFn: async (notifIds: string[]) => {
-      // Use direct UPDATE instead of RPC for reliability (works even if
-      // the mark_notifications_read function hasn't been deployed yet).
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("notifications")
         .update({ read: true })
-        .in("id", notifIds);
+        .in("id", notifIds), 15_000);
       if (error) throw error;
     },
     onMutate: async (notifIds) => {
@@ -120,13 +121,13 @@ export function useMarkAllNotificationsRead() {
 
   return useMutation({
     mutationFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser(), 10_000);
       if (!user) throw new Error("Not authenticated");
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("notifications")
         .update({ read: true })
         .eq("user_id", user.id)
-        .eq("read", false);
+        .eq("read", false), 15_000);
       if (error) throw error;
     },
     onMutate: async () => {
@@ -166,12 +167,12 @@ export function useClearAllNotifications() {
 
   return useMutation({
     mutationFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser(), 10_000);
       if (!user) throw new Error("Not authenticated");
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("notifications")
         .delete()
-        .eq("user_id", user.id);
+        .eq("user_id", user.id), 15_000);
       if (error) throw error;
     },
     onMutate: async () => {

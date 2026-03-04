@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { PLANS, type Plan } from "@/hooks/useSubscription";
+import { withTimeout } from "@/lib/withTimeout";
 
 /* ── Interfaces ─────────────────────────────────────────────────────── */
 
@@ -111,6 +112,7 @@ function rowToAdminLead(row: Record<string, any>): AdminLead {
 export function useAdminStats() {
   return useQuery({
     queryKey: ["admin-stats"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const [usersRes, driversRes, companiesRes, jobsRes, appsRes, leadsRes] =
         await Promise.all([
@@ -181,6 +183,7 @@ export function useAdminUsers() {
 export function useAdminSubscriptions() {
   return useQuery({
     queryKey: ["admin-subscriptions"],
+    refetchOnMount: "always",
     queryFn: async () => {
       // Get all companies
       const { data: companies } = await supabase
@@ -239,6 +242,7 @@ export function useAdminSubscriptions() {
 export function useAdminJobs() {
   return useQuery({
     queryKey: ["admin-jobs"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("jobs")
@@ -254,6 +258,7 @@ export function useAdminJobs() {
 export function useAdminLeads() {
   return useQuery({
     queryKey: ["admin-leads"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
@@ -273,10 +278,10 @@ export function useAdminUpdateJobStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { jobId: string; status: "Active" | "Paused" | "Closed" }) => {
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("jobs")
         .update({ status: params.status, updated_at: new Date().toISOString() })
-        .eq("id", params.jobId);
+        .eq("id", params.jobId), 15_000);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -292,7 +297,7 @@ export function useChangeSubscriptionPlan() {
   return useMutation({
     mutationFn: async (params: { companyId: string; plan: Plan }) => {
       const planInfo = PLANS[params.plan];
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("subscriptions")
         .upsert(
           {
@@ -306,7 +311,7 @@ export function useChangeSubscriptionPlan() {
             ).toISOString(),
           },
           { onConflict: "company_id" }
-        );
+        ), 15_000);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -320,9 +325,9 @@ export function useAdminBanUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { userId: string; ban: boolean }) => {
-      const { data, error } = await supabase.functions.invoke("admin-actions", {
+      const { data, error } = await withTimeout(supabase.functions.invoke("admin-actions", {
         body: { action: params.ban ? "ban" : "unban", user_id: params.userId },
-      });
+      }), 15_000);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       return data;
@@ -339,9 +344,9 @@ export function useAdminDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { userId: string }) => {
-      const { data, error } = await supabase.functions.invoke("admin-actions", {
+      const { data, error } = await withTimeout(supabase.functions.invoke("admin-actions", {
         body: { action: "delete", user_id: params.userId },
-      });
+      }), 15_000);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       return data;
@@ -372,6 +377,7 @@ export interface AdminApplication {
 export function useAdminApplications() {
   return useQuery({
     queryKey: ["admin-applications"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("applications")
@@ -422,6 +428,7 @@ export interface AdminChartData {
 export function useAdminChartData() {
   return useQuery({
     queryKey: ["admin-chart-data"],
+    refetchOnMount: "always",
     queryFn: async () => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -483,10 +490,10 @@ export function useToggleCompanyVerified() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: { companyId: string; verified: boolean }) => {
-      const { error } = await supabase
+      const { error } = await withTimeout(supabase
         .from("company_profiles")
         .update({ is_verified: params.verified })
-        .eq("id", params.companyId);
+        .eq("id", params.companyId), 15_000);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
