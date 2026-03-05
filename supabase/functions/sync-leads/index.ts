@@ -194,8 +194,8 @@ Deno.serve(async (req) => {
         .select("role")
         .eq("id", user.id)
         .maybeSingle();
-      if (!profile || profile.role !== "admin") {
-        return new Response(JSON.stringify({ error: "Admin access required" }), {
+      if (!profile || (profile.role !== "admin" && profile.role !== "company")) {
+        return new Response(JSON.stringify({ error: "Access denied" }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
