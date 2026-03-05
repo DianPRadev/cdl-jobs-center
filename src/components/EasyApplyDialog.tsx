@@ -94,11 +94,29 @@ const EasyApplyDialog = ({ trigger, companyName = "General Application", company
       return;
     }
     setSubmitting(true);
+
+    // Prevent duplicate applications to the same company/job
+    if (companyId || jobId) {
+      const dupQuery = supabase
+        .from("applications")
+        .select("id", { count: "exact", head: true })
+        .eq("driver_id", user.id);
+      if (jobId) dupQuery.eq("job_id", jobId);
+      else if (companyId) dupQuery.eq("company_id", companyId);
+      const { count } = await dupQuery;
+      if ((count ?? 0) > 0) {
+        toast.error("You have already applied. Check your dashboard for status updates.");
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const insertPromise = supabase.from("applications").insert({
       driver_id: user.id,
       company_id: companyId || null,
       job_id: jobId || null,
       company_name: companyName,
+      job_title: companyName,
       first_name: firstName,
       last_name: lastName,
       email,
@@ -126,6 +144,7 @@ const EasyApplyDialog = ({ trigger, companyName = "General Application", company
       toast.success(`Application sent to ${companyName}!`);
       qc.invalidateQueries({ queryKey: ["driver-applications"] });
       qc.invalidateQueries({ queryKey: ["has-applied-job"] });
+      qc.invalidateQueries({ queryKey: ["has-applied"] });
       qc.invalidateQueries({ queryKey: ["company-applications"] });
       setOpen(false);
     } catch (err: unknown) {

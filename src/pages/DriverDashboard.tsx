@@ -906,7 +906,7 @@ const DriverDashboardInner = ({ user }: { user: AuthUser }) => {
                   const unseen = isAppUnseen(app);
                   const displayTitle = app.jobTitle && app.jobTitle !== "General Application"
                     ? app.jobTitle
-                    : "General Application";
+                    : app.companyName || "General Application";
                   return (
                     <div
                       id={`driver-application-${app.id}`}
