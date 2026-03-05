@@ -1,16 +1,11 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
 User-agent: *
 Allow: /
+
+# Auth-gated pages — no indexable content
+Disallow: /dashboard
+Disallow: /driver-dashboard
+Disallow: /admin
+Disallow: /signin
+Disallow: /onboarding
 
 Sitemap: https://cdljobscenter.com/sitemap.xml

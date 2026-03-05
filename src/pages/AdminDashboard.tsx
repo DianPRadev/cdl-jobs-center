@@ -67,7 +67,7 @@ import { supabase } from "@/lib/supabase";
 import { useAllVerificationRequests, useReviewVerification, getVerificationDocSignedUrl } from "@/hooks/useVerification";
 import { Textarea } from "@/components/ui/textarea";
 import { useMatchingRollout } from "@/hooks/useMatchScores";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import {
   BarChart,
   Bar,
@@ -87,6 +87,7 @@ type AdminTab = "overview" | "users" | "subscriptions" | "jobs" | "leads" | "app
 /* ── Outer guard ────────────────────────────────────────────────────── */
 const AdminDashboard = () => {
   usePageTitle("Admin Dashboard");
+  useNoIndex();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 

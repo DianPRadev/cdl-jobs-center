@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/context/auth";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { supabase } from "@/lib/supabase";
 import { friendlySignInError } from "@/lib/authErrorMessages";
 import { getPasswordStrength, type PasswordStrengthLevel } from "@/lib/passwordStrength";
@@ -62,6 +62,7 @@ const PasswordStrengthIndicator = ({ password }: { password: string }) => {
 
 const SignIn = () => {
   usePageTitle("Sign In");
+  useNoIndex();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);

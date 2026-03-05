@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/auth";
 import { supabase } from "@/lib/supabase";
 import { Spinner } from "@/components/ui/Spinner";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { withTimeout } from "@/lib/withTimeout";
 
 type RoleChoice = "driver" | "company";
@@ -16,6 +16,7 @@ type RoleChoice = "driver" | "company";
  */
 const Onboarding = () => {
   usePageTitle("Welcome");
+  useNoIndex();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [saving, setSaving] = useState<RoleChoice | null>(null);

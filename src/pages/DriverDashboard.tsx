@@ -22,7 +22,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { useUnreadCount } from "@/hooks/useMessages";
 import { formatRelativeDate } from "@/lib/dateUtils";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import {
@@ -155,6 +155,7 @@ const StageBadge = ({ stage }: { stage?: PipelineStage }) => {
 
 const DriverDashboard = () => {
   usePageTitle("Driver Dashboard");
+  useNoIndex();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 

@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/dateUtils";
 import { withTimeout } from "@/lib/withTimeout";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
@@ -564,6 +564,7 @@ const AiMatchesContent = ({
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 const Dashboard = () => {
   usePageTitle("Company Dashboard");
+  useNoIndex();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
