@@ -47,9 +47,10 @@ export function useLeads(companyId?: string) {
     queryFn: async () => {
       let query = supabase
         .from("leads")
-        .select("*")
+        .select("*", { count: "exact" })
         .order("created_at", { ascending: false })
-        .order("id", { ascending: true });
+        .order("id", { ascending: true })
+        .limit(5000);
 
       if (companyId) {
         query = query.eq("company_id", companyId);
