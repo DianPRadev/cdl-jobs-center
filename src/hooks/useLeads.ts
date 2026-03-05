@@ -39,27 +39,36 @@ function rowToLead(row: Record<string, any>): Lead {
   };
 }
 
-/** Fetch leads for a company */
+/** Fetch leads for a company — paginated to bypass 1000-row default */
 export function useLeads(companyId?: string) {
   return useQuery({
     queryKey: ["leads", companyId ?? "all"],
     refetchOnMount: "always",
     queryFn: async () => {
-      let query = supabase
-        .from("leads")
-        .select("*", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true })
-        .limit(5000);
+      const PAGE = 1000;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all: Record<string, any>[] = [];
+      let from = 0;
+      while (true) {
+        let query = supabase
+          .from("leads")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, from + PAGE - 1);
 
-      if (companyId) {
-        query = query.eq("company_id", companyId);
+        if (companyId) {
+          query = query.eq("company_id", companyId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+        from += PAGE;
       }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      if (!data || data.length === 0) return [];
-      return data.map(rowToLead);
+      return all.map(rowToLead);
     },
     refetchInterval: 60_000,
   });

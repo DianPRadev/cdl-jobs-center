@@ -268,19 +268,28 @@ export function useAdminJobs() {
   });
 }
 
-/** All leads */
+/** All leads — fetches in pages to bypass Supabase 1000-row default */
 export function useAdminLeads() {
   return useQuery({
     queryKey: ["admin-leads"],
     refetchOnMount: "always",
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("leads")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(5000);
-      if (error) return [];
-      return (data ?? []).map(rowToAdminLead);
+      const PAGE = 1000;
+      const all: Record<string, unknown>[] = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from("leads")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (error) break;
+        if (!data || data.length === 0) break;
+        all.push(...data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      return all.map(rowToAdminLead);
     },
     refetchInterval: 60_000,
   });

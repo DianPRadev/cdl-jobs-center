@@ -97,8 +97,27 @@ async function fetchSheet(
   const errors: string[] = [];
   const now = new Date().toISOString();
 
+  // Find which column index is mapped to full_name and date_submitted
+  const nameColIdx = Number(Object.entries(colMap).find(([, f]) => f === "full_name")?.[0] ?? -1);
+  const dateColIdx = Number(Object.entries(colMap).find(([, f]) => f === "date_submitted")?.[0] ?? -1);
+  const hasDateCol = dateColIdx >= 0 && dateColIdx < nameColIdx;
+
   for (let r = 1; r < rows.length; r++) {
-    const vals = rows[r];
+    let vals = rows[r];
+
+    // Detect shifted rows: if header has a date column before name,
+    // but this row's first cell doesn't look like a date/timestamp,
+    // the date was omitted and all values shifted left by 1.
+    if (hasDateCol && vals.length > 0) {
+      const firstCell = (vals[dateColIdx] ?? "").trim();
+      const looksLikeDate = /^\d{4}-\d{2}-\d{2}|^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(firstCell);
+      if (!looksLikeDate && firstCell) {
+        // Shift: insert empty string at the date column position
+        vals = [...vals];
+        vals.splice(dateColIdx, 0, "");
+      }
+    }
+
     // Build a map of field -> value for this row
     const fields: Record<string, string> = {};
     for (const [colIdx, fieldName] of Object.entries(colMap)) {
