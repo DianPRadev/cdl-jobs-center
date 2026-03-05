@@ -684,6 +684,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [jobPage, setJobPage] = useState(0);
   const [leadStateFilter, setLeadStateFilter] = useState("all");
   const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "owner-op" | "company">("all");
+  const [leadSearch, setLeadSearch] = useState("");
   const [contactLeadId, setContactLeadId] = useState<string | null>(null);
   const [sendApplyLeadId, setSendApplyLeadId] = useState<string | null>(null);
   const [showDismissed, setShowDismissed] = useState(false);
@@ -1625,13 +1626,21 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
 
         {/* ── Tab: Leads ───────────────────────────────────────────────────── */}
         {activeTab === "leads" && (() => {
-          const uniqueStates = [...new Set(leads.map((l) => l.state).filter(Boolean))].sort() as string[];
+          const US_STATES = new Set(["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming"]);
+          const uniqueStates = [...new Set(leads.map((l) => l.state).filter((s): s is string => !!s && US_STATES.has(s)))].sort();
           const activeLeads = leads.filter((l) => l.status !== "dismissed" && l.status !== "hired");
           const dismissedLeads = leads.filter((l) => l.status === "dismissed");
+          const searchLower = leadSearch.toLowerCase();
           const filtered = activeLeads.filter((l) => {
             if (leadStateFilter !== "all" && l.state !== leadStateFilter) return false;
             if (leadTypeFilter === "owner-op" && !l.isOwnerOp) return false;
             if (leadTypeFilter === "company" && l.isOwnerOp) return false;
+            if (searchLower && !(
+              l.fullName.toLowerCase().includes(searchLower) ||
+              (l.phone && l.phone.toLowerCase().includes(searchLower)) ||
+              (l.email && l.email.toLowerCase().includes(searchLower)) ||
+              (l.state && l.state.toLowerCase().includes(searchLower))
+            )) return false;
             return true;
           });
           const LEAD_PAGE_SIZE = 10;
@@ -1696,7 +1705,17 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">Facebook lead ad responses from drivers looking for jobs.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Search leads..."
+                      value={leadSearch}
+                      onChange={(e) => { setLeadSearch(e.target.value); setLeadPage(0); }}
+                      className="h-8 w-48 rounded-md border border-border bg-card pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"
