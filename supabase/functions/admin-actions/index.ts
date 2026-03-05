@@ -103,15 +103,20 @@ Deno.serve(async (req) => {
       }
 
       case "delete": {
-        // Delete related data first (cascade may handle some, but be explicit)
+        // Delete related data first — must clear all FK references before profiles
+        await supabase.from("notifications").delete().eq("user_id", user_id);
         await supabase.from("saved_jobs").delete().eq("driver_id", user_id);
+        await supabase.from("ai_match_feedback").delete().eq("driver_id", user_id);
+        await supabase.from("ai_match_results").delete().eq("driver_id", user_id);
+        await supabase.from("ai_match_profiles").delete().eq("driver_id", user_id);
         await supabase.from("applications").delete().eq("driver_id", user_id);
         await supabase.from("applications").delete().eq("company_id", user_id);
+        await supabase.from("leads").delete().eq("company_id", user_id);
+        await supabase.from("verification_requests").delete().eq("company_id", user_id);
         await supabase.from("jobs").delete().eq("company_id", user_id);
         await supabase.from("subscriptions").delete().eq("company_id", user_id);
         await supabase.from("driver_profiles").delete().eq("id", user_id);
         await supabase.from("company_profiles").delete().eq("id", user_id);
-        await supabase.from("verification_requests").delete().eq("company_id", user_id);
         await supabase.from("profiles").delete().eq("id", user_id);
 
         // Delete auth user last

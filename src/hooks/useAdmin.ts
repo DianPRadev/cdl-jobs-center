@@ -52,7 +52,14 @@ export interface AdminLead {
   state: string | null;
   yearsExp: string | null;
   isOwnerOp: boolean;
+  leadType: "owner_operator" | "company_driver";
   status: "new" | "contacted" | "hired" | "dismissed";
+  violations: string | null;
+  availability: string | null;
+  notes: string | null;
+  truckYear: string | null;
+  truckModel: string | null;
+  dateSubmitted: string | null;
   createdAt: string;
 }
 
@@ -101,7 +108,14 @@ function rowToAdminLead(row: Record<string, any>): AdminLead {
     state: row.state ?? null,
     yearsExp: row.years_exp ?? null,
     isOwnerOp: row.is_owner_op ?? false,
+    leadType: row.lead_type ?? "owner_operator",
     status: row.status ?? "new",
+    violations: row.violations ?? null,
+    availability: row.availability ?? null,
+    notes: row.notes ?? null,
+    truckYear: row.truck_year ?? null,
+    truckModel: row.truck_model ?? null,
+    dateSubmitted: row.date_submitted ?? null,
     createdAt: row.created_at,
   };
 }
@@ -268,6 +282,27 @@ export function useAdminLeads() {
       return (data ?? []).map(rowToAdminLead);
     },
     refetchInterval: 60_000,
+  });
+}
+
+/** Trigger manual leads sync from Google Sheets */
+export function useSyncLeads() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not authenticated");
+      const { data, error } = await withTimeout(supabase.functions.invoke("sync-leads", {
+        body: {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }), 60_000);
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data as { synced: number; new: number; updated: number; errors: string[] };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-leads"] });
+    },
   });
 }
 

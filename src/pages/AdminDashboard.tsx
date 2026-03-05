@@ -44,6 +44,11 @@ import {
   ShieldOff,
   ClipboardList,
   TrendingUp,
+  RefreshCw,
+  Search,
+  Filter,
+  Truck,
+  Loader2,
 } from "lucide-react";
 import {
   useAdminStats,
@@ -51,6 +56,7 @@ import {
   useAdminSubscriptions,
   useAdminJobs,
   useAdminLeads,
+  useSyncLeads,
   useAdminUpdateJobStatus,
   useChangeSubscriptionPlan,
   useToggleCompanyVerified,
@@ -123,6 +129,7 @@ function AdminDashboardInner() {
   const { data: subscriptions = [] } = useAdminSubscriptions();
   const { data: jobs = [] } = useAdminJobs();
   const { data: leads = [] } = useAdminLeads();
+  const syncLeads = useSyncLeads();
   const updateJobStatus = useAdminUpdateJobStatus();
   const changePlan = useChangeSubscriptionPlan();
   const toggleVerified = useToggleCompanyVerified();
@@ -214,6 +221,9 @@ function AdminDashboardInner() {
 
   /* leads tab state */
   const [leadPage, setLeadPage] = useState(0);
+  const [leadSearch, setLeadSearch] = useState("");
+  const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "owner_operator" | "company_driver">("all");
+  const [leadStatusFilter, setLeadStatusFilter] = useState<"all" | "new" | "contacted" | "hired" | "dismissed">("all");
 
   /* applications tab state */
   const [appPage, setAppPage] = useState(0);
@@ -1039,45 +1049,142 @@ function AdminDashboardInner() {
         {/* ── TAB: Leads ─────────────────────────────────────────────── */}
         {activeTab === "leads" &&
           (() => {
-            const pageLeads = leads.slice(
+            const filteredLeads = leads.filter((l) => {
+              if (leadTypeFilter !== "all" && l.leadType !== leadTypeFilter) return false;
+              if (leadStatusFilter !== "all" && l.status !== leadStatusFilter) return false;
+              if (leadSearch.trim()) {
+                const q = leadSearch.toLowerCase();
+                const matchesName = l.fullName?.toLowerCase().includes(q);
+                const matchesPhone = l.phone?.toLowerCase().includes(q);
+                const matchesEmail = l.email?.toLowerCase().includes(q);
+                const matchesState = l.state?.toLowerCase().includes(q);
+                if (!matchesName && !matchesPhone && !matchesEmail && !matchesState) return false;
+              }
+              return true;
+            });
+            const pageLeads = filteredLeads.slice(
               leadPage * PAGE_SIZE,
               (leadPage + 1) * PAGE_SIZE
             );
 
+            const LEAD_TYPE_BADGE: Record<string, string> = {
+              owner_operator: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+              company_driver: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
+            };
+            const LEAD_TYPE_LABEL: Record<string, string> = {
+              owner_operator: "Owner Operator",
+              company_driver: "Company Driver",
+            };
+
             return (
               <div>
-                <h2 className="font-display font-semibold text-base mb-4">
-                  All Leads
-                  <span className="text-muted-foreground font-normal text-sm ml-2">
-                    ({leads.length})
-                  </span>
-                </h2>
+                {/* Header + Sync button */}
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                  <h2 className="font-display font-semibold text-base">
+                    All Leads
+                    <span className="text-muted-foreground font-normal text-sm ml-2">
+                      ({filteredLeads.length}{filteredLeads.length !== leads.length ? ` of ${leads.length}` : ""})
+                    </span>
+                  </h2>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={syncLeads.isPending}
+                    onClick={() => {
+                      syncLeads.mutate(undefined, {
+                        onSuccess: (data) => {
+                          toast.success(`Sync complete: ${data.new} new, ${data.updated} updated`);
+                          if (data.errors?.length) {
+                            data.errors.forEach((e: string) => toast.error(e));
+                          }
+                        },
+                        onError: (err) => toast.error(err instanceof Error ? err.message : "Sync failed"),
+                      });
+                    }}
+                  >
+                    {syncLeads.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    {syncLeads.isPending ? "Syncing..." : "Sync Now"}
+                  </Button>
+                </div>
+
+                {/* Filters */}
+                <div className="border border-border bg-card mb-4">
+                  <div className="px-4 py-3 flex flex-col sm:flex-row gap-3 items-start sm:items-end flex-wrap">
+                    {/* Search */}
+                    <div className="w-full sm:w-56 space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Search</label>
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                        <Input
+                          placeholder="Name, phone, email..."
+                          value={leadSearch}
+                          onChange={(e) => { setLeadSearch(e.target.value); setLeadPage(0); }}
+                          className="pl-8 h-9 text-sm"
+                        />
+                      </div>
+                    </div>
+                    {/* Type */}
+                    <div className="w-full sm:w-44 space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Type</label>
+                      <Select value={leadTypeFilter} onValueChange={(v: typeof leadTypeFilter) => { setLeadTypeFilter(v); setLeadPage(0); }}>
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All types</SelectItem>
+                          <SelectItem value="owner_operator">Owner Operators</SelectItem>
+                          <SelectItem value="company_driver">Company Drivers</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Status */}
+                    <div className="w-full sm:w-40 space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Status</label>
+                      <Select value={leadStatusFilter} onValueChange={(v: typeof leadStatusFilter) => { setLeadStatusFilter(v); setLeadPage(0); }}>
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All statuses</SelectItem>
+                          <SelectItem value="new">New</SelectItem>
+                          <SelectItem value="contacted">Contacted</SelectItem>
+                          <SelectItem value="hired">Hired</SelectItem>
+                          <SelectItem value="dismissed">Dismissed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
 
                 {pageLeads.length === 0 ? (
                   <div className="border border-border bg-card">
-                    <EmptyState icon={UserCheck} heading="No leads synced yet." />
+                    <EmptyState icon={UserCheck} heading={leads.length === 0 ? "No leads synced yet. Click \"Sync Now\" to import from Google Sheets." : "No leads match the selected filters."} />
                   </div>
                 ) : (
                   <div className="border border-border bg-card divide-y divide-border">
                     {pageLeads.map((lead) => (
                       <div
                         key={lead.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4"
+                        className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 px-5 py-4"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <p className="font-semibold text-foreground text-sm">
                               {lead.fullName}
                             </p>
-                            <span
-                              className={`text-xs px-1.5 py-0.5 font-medium rounded-full ${
-                                LEAD_STATUS_BADGE[lead.status] ?? ""
-                              }`}
-                            >
+                            <span className={`text-xs px-1.5 py-0.5 font-medium rounded-full ${LEAD_TYPE_BADGE[lead.leadType] ?? ""}`}>
+                              {LEAD_TYPE_LABEL[lead.leadType] ?? lead.leadType}
+                            </span>
+                            <span className={`text-xs px-1.5 py-0.5 font-medium rounded-full ${LEAD_STATUS_BADGE[lead.status] ?? ""}`}>
                               {lead.status}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap mt-1">
                             {lead.phone && (
                               <span className="flex items-center gap-1">
                                 <PhoneIcon className="h-3 w-3" />
@@ -1096,11 +1203,23 @@ function AdminDashboardInner() {
                                 {lead.state}
                               </span>
                             )}
+                            {lead.yearsExp && (
+                              <span>{lead.yearsExp} yrs exp</span>
+                            )}
                           </div>
+                          {/* Extra details row */}
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap mt-0.5">
+                            {lead.truckYear && <span>Truck: {lead.truckYear}{lead.truckModel ? ` ${lead.truckModel}` : ""}</span>}
+                            {lead.violations && <span>Violations: {lead.violations}</span>}
+                            {lead.availability && <span>Available: {lead.availability}</span>}
+                          </div>
+                          {lead.notes && (
+                            <p className="text-xs text-muted-foreground mt-1 italic line-clamp-1">
+                              {lead.notes}
+                            </p>
+                          )}
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {lead.source} &middot;{" "}
-                            {formatDate(lead.createdAt)}
-                            {lead.yearsExp && ` · ${lead.yearsExp} yrs exp`}
+                            {lead.dateSubmitted ? formatDate(lead.dateSubmitted) : formatDate(lead.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1111,7 +1230,7 @@ function AdminDashboardInner() {
                 <Pagination
                   page={leadPage}
                   setPage={setLeadPage}
-                  total={leads.length}
+                  total={filteredLeads.length}
                 />
               </div>
             );
