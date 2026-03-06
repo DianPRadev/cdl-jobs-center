@@ -266,6 +266,109 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Phase C: jobless companies — score leads against company profile ──
+
+    if (!timedOut) {
+      // Find companies that have leads but NO active jobs (not already scored above)
+      const companiesWithJobs = jobs ? new Set(jobs.map((j: Record<string, any>) => j.company_id as string)) : new Set<string>();
+
+      // Get distinct company_ids from leads that were NOT scored in Phase B
+      const { data: leadCompanies } = await supabase
+        .from("leads")
+        .select("company_id")
+        .not("company_id", "is", null);
+
+      if (leadCompanies) {
+        const joblessCompanyIds = [
+          ...new Set(
+            leadCompanies
+              .map((r: Record<string, any>) => r.company_id as string)
+              .filter((cid: string) => !companiesWithJobs.has(cid)),
+          ),
+        ];
+
+        for (const companyId of joblessCompanyIds) {
+          if (Date.now() - startTime > TIMEOUT_MS) {
+            timedOut = true;
+            break;
+          }
+
+          // Build synthetic job from company profile
+          const { data: cp } = await supabase
+            .from("company_profiles")
+            .select("company_name, address, about, company_goal")
+            .eq("id", companyId)
+            .maybeSingle();
+
+          const companyName = cp?.company_name ?? "Company";
+          const address = cp?.address ?? null;
+          const about = cp?.about ?? "";
+          const goal = cp?.company_goal ?? "";
+
+          const profileJob: JobFeatures = {
+            jobId: `profile-${companyId}`,
+            companyId,
+            title: `${companyName} — General Hiring`,
+            description: [about, goal].filter(Boolean).join(" "),
+            driverType: null,
+            routeType: null,
+            freightType: null,
+            teamDriving: null,
+            location: address,
+            pay: null,
+            status: "Active",
+            textBlock: `${companyName} hiring CDL drivers. ${about} ${goal}`.trim(),
+          };
+
+          // Fetch company's leads
+          const { data: leads } = await supabase
+            .from("leads")
+            .select("*")
+            .eq("company_id", companyId);
+
+          if (leads && leads.length > 0) {
+            const leadRows = [];
+            for (const lead of leads) {
+              const candidate = extractCandidateFromLead(lead);
+              const result = computeCompanyDriverRulesScore(candidate, profileJob);
+
+              leadRows.push({
+                company_id: companyId,
+                job_id: null,
+                candidate_source: "lead" as const,
+                candidate_id: lead.id,
+                candidate_driver_id: null,
+                overall_score: Math.min(result.overallScore, 100),
+                rules_score: result.rulesScore,
+                semantic_score: result.semanticScore,
+                score_breakdown: result.scoreBreakdown,
+                top_reasons: result.topReasons,
+                cautions: result.cautions,
+                degraded_mode: result.degradedMode,
+                provider: embeddingProvider?.providerName ?? null,
+                model: embeddingProvider?.modelName ?? null,
+                computed_at: new Date().toISOString(),
+                version: 1,
+              });
+            }
+            if (leadRows.length > 0) {
+              // For null job_id rows, delete existing first then insert (can't upsert on nullable column easily)
+              await supabase
+                .from("company_driver_match_scores")
+                .delete()
+                .eq("company_id", companyId)
+                .eq("candidate_source", "lead")
+                .is("job_id", null);
+              await supabase
+                .from("company_driver_match_scores")
+                .insert(leadRows);
+              companyDriverPairs += leadRows.length;
+            }
+          }
+        }
+      }
+    }
+
     const elapsed = Date.now() - startTime;
 
     return new Response(

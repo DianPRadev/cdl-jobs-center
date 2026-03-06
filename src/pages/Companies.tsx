@@ -68,6 +68,7 @@ const Companies = () => {
       const { data, error } = await supabase
         .from("company_profiles")
         .select("id, company_name, phone, address, email, website, about, logo_url, is_verified")
+        .eq("is_verified", true)
         .order("company_name");
       if (error) throw error;
       return (data ?? []) as CompanyRow[];

@@ -341,6 +341,294 @@ function computeBehaviorScore(
   };
 }
 
+// ── Company behavior context ───────────────────────────────
+
+type CompanyFeedbackValue = "helpful" | "not_relevant" | "hide" | "contacted" | "interviewed" | "hired";
+type CompanyConfidence = "high" | "medium" | "low";
+type RankTier = "hot" | "warm" | "explore" | "blocked";
+
+const COMPANY_MATCH_ACTIONS = {
+  canMessage: true,
+  canSave: true,
+  feedback: ["helpful", "not_relevant", "hide", "contacted", "interviewed", "hired"] as const,
+};
+
+interface CompanyBehaviorContext {
+  feedbackByCandidate: Map<string, CompanyFeedbackValue>;
+  hiddenCandidateKeys: Set<string>;
+  positiveDriverTypes: Set<string>;
+  positiveStates: Set<string>;
+  candidateEventBoost: Map<string, number>;
+}
+
+async function getCompanyBehaviorContext(
+  supabase: SupabaseClient,
+  companyId: string,
+): Promise<CompanyBehaviorContext> {
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [{ data: feedbackRows }, { data: eventRows }] = await Promise.all([
+    supabase
+      .from("company_match_feedback")
+      .select("candidate_source, candidate_id, feedback")
+      .eq("company_id", companyId),
+    supabase
+      .from("company_match_events")
+      .select("candidate_source, candidate_id, event_type")
+      .eq("company_id", companyId)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
+
+  const feedbackByCandidate = new Map<string, CompanyFeedbackValue>();
+  const hiddenCandidateKeys = new Set<string>();
+  const positiveDriverTypes = new Set<string>();
+  const positiveStates = new Set<string>();
+  const candidateEventBoost = new Map<string, number>();
+
+  for (const row of feedbackRows ?? []) {
+    const key = `${row.candidate_source}:${row.candidate_id}`;
+    const feedback = row.feedback as CompanyFeedbackValue;
+    feedbackByCandidate.set(key, feedback);
+    if (feedback === "hide") hiddenCandidateKeys.add(key);
+  }
+
+  for (const row of eventRows ?? []) {
+    const key = `${row.candidate_source}:${row.candidate_id}`;
+    const eventType = row.event_type as string;
+    const increment =
+      eventType === "contact" ? 3 : eventType === "save" ? 2 : eventType === "message" ? 2 : eventType === "view" ? 1 : 0;
+    if (increment > 0) {
+      const next = (candidateEventBoost.get(key) ?? 0) + increment;
+      candidateEventBoost.set(key, Math.min(6, next));
+    }
+  }
+
+  return {
+    feedbackByCandidate,
+    hiddenCandidateKeys,
+    positiveDriverTypes,
+    positiveStates,
+    candidateEventBoost,
+  };
+}
+
+function computeCompanyBehaviorScore(
+  candidateKey: string,
+  context: CompanyBehaviorContext,
+): { score: number; hidden: boolean; detail: string; caution?: string; reason?: string } {
+  const feedback = context.feedbackByCandidate.get(candidateKey);
+  if (feedback === "hide") {
+    return { score: 0, hidden: true, detail: "Candidate hidden by feedback.", caution: "You hid this candidate." };
+  }
+
+  let score = 0;
+  const details: string[] = [];
+
+  const interactionBoost = context.candidateEventBoost.get(candidateKey) ?? 0;
+  if (interactionBoost > 0) {
+    score += Math.min(4, interactionBoost);
+    details.push(`Interactions +${Math.min(4, interactionBoost)}`);
+  }
+
+  if (feedback === "helpful" || feedback === "contacted") {
+    score += 3;
+    details.push(`Feedback: ${feedback} +3`);
+  } else if (feedback === "interviewed") {
+    score += 5;
+    details.push("Interviewed +5");
+  } else if (feedback === "hired") {
+    score += 6;
+    details.push("Hired +6");
+  } else if (feedback === "not_relevant") {
+    score -= 5;
+    details.push("Marked not relevant");
+  }
+
+  return {
+    score: clamp(Math.round(score), 0, BEHAVIOR_WEIGHT_MAX),
+    hidden: false,
+    detail: details.length > 0 ? details.join("; ") : "No behavior signal yet.",
+    caution: feedback === "not_relevant" ? "You marked this candidate as not relevant." : undefined,
+    reason: feedback === "hired" ? "Previously hired." : feedback === "interviewed" ? "Previously interviewed." : feedback === "contacted" ? "You contacted this candidate." : undefined,
+  };
+}
+
+function deriveCandidateMissingFields(candidate: CandidateFeatures): string[] {
+  const missing: string[] = [];
+  if (!candidate.driverType) missing.push("driver type");
+  if (!candidate.licenseClass) missing.push("license class");
+  if (!candidate.yearsExp) missing.push("experience");
+  if (!candidate.state) missing.push("state");
+  if (!Object.values(candidate.routePrefs).some(Boolean)) missing.push("route preferences");
+  if (!Object.values(candidate.haulerExperience).some(Boolean)) missing.push("freight experience");
+  return missing;
+}
+
+function deriveCompanyConfidence(
+  missingFields: string[],
+  semanticScore: number | null,
+  behaviorScore: number,
+): CompanyConfidence {
+  const totalFields = 6;
+  const completeness = clamp((totalFields - missingFields.length) / totalFields, 0, 1);
+  const signalQuality =
+    (semanticScore !== null ? 1 : 0) + (behaviorScore >= 3 ? 1 : 0);
+
+  if (completeness >= 0.67 && signalQuality >= 1) return "high";
+  if (completeness >= 0.34 || signalQuality >= 1) return "medium";
+  return "low";
+}
+
+function deriveRankTier(overall: number, confidence: CompanyConfidence, hardBlocked: boolean): RankTier {
+  if (hardBlocked) return "blocked";
+  if (overall >= 80 && confidence !== "low") return "hot";
+  if (overall >= 60) return "warm";
+  return "explore";
+}
+
+interface CompanyV2Score {
+  overall: number;
+  normalizedRules: number;
+  semanticScore: number | null;
+  behaviorScore: number;
+  confidence: CompanyConfidence;
+  rankTier: RankTier;
+  missingFields: string[];
+  scoreBreakdown: Record<string, { score: number; maxScore: number; detail: string }>;
+  topReasons: { text: string; positive: boolean }[];
+  cautions: { text: string; positive: boolean }[];
+  degradedMode: boolean;
+  hardBlocked: boolean;
+  hardBlockReasons: string[];
+  hidden: boolean;
+}
+
+function computeCompanyV2Score(
+  candidate: CandidateFeatures,
+  jobFeatures: JobFeatures,
+  candidateEmbedding: number[] | null,
+  jobEmbedding: number[] | null,
+  behaviorContext: CompanyBehaviorContext,
+): CompanyV2Score {
+  const candidateKey = `${candidate.source}:${candidate.candidateId}`;
+  const behavior = computeCompanyBehaviorScore(candidateKey, behaviorContext);
+  if (behavior.hidden) {
+    return {
+      overall: 0, normalizedRules: 0, semanticScore: null, behaviorScore: 0,
+      confidence: "low", rankTier: "blocked", missingFields: [],
+      scoreBreakdown: {}, topReasons: [], cautions: [{ text: "Hidden by your feedback.", positive: false }],
+      degradedMode: true, hardBlocked: false, hardBlockReasons: [], hidden: true,
+    };
+  }
+
+  const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
+  const missingFields = deriveCandidateMissingFields(candidate);
+
+  let semanticScore: number | null = null;
+  let semanticDetail = "Semantic similarity unavailable (rules-only mode).";
+  if (candidateEmbedding && jobEmbedding) {
+    const sim = cosineSimilarity(candidateEmbedding, jobEmbedding);
+    semanticScore = Math.round(clamp(Math.max(0, sim), 0, 1) * SEMANTIC_WEIGHT_MAX);
+    semanticDetail = `Embedding similarity contribution (${semanticScore}/${SEMANTIC_WEIGHT_MAX}).`;
+  }
+
+  const normalizedRules = clamp(
+    Math.round((result.rulesScore / RULES_RAW_MAX) * RULES_WEIGHT_MAX),
+    0,
+    RULES_WEIGHT_MAX,
+  );
+  const overall = clamp(
+    normalizedRules + (semanticScore ?? 0) + behavior.score,
+    0,
+    100,
+  );
+  const degradedMode = semanticScore === null;
+  const confidence = deriveCompanyConfidence(missingFields, semanticScore, behavior.score);
+  const rankTier = deriveRankTier(overall, confidence, false);
+
+  const topReasons = [...result.topReasons];
+  if (behavior.reason) topReasons.push({ text: behavior.reason, positive: true });
+  if (semanticScore !== null && semanticScore >= 12) {
+    topReasons.push({ text: "Strong profile-job similarity.", positive: true });
+  }
+
+  const cautions = [...result.cautions];
+  if (behavior.caution) cautions.push({ text: behavior.caution, positive: false });
+
+  const scoreBreakdown = {
+    ...result.scoreBreakdown,
+    rulesNormalized: {
+      score: normalizedRules,
+      maxScore: RULES_WEIGHT_MAX,
+      detail: `Normalized from raw rules score ${result.rulesScore}/${RULES_RAW_MAX}.`,
+    },
+    semantic: {
+      score: semanticScore ?? 0,
+      maxScore: SEMANTIC_WEIGHT_MAX,
+      detail: semanticDetail,
+    },
+    behavior: {
+      score: behavior.score,
+      maxScore: BEHAVIOR_WEIGHT_MAX,
+      detail: behavior.detail,
+    },
+  };
+
+  return {
+    overall,
+    normalizedRules,
+    semanticScore,
+    behaviorScore: behavior.score,
+    confidence,
+    rankTier,
+    missingFields,
+    scoreBreakdown,
+    topReasons: topReasons.slice(0, 4),
+    cautions: cautions.slice(0, 2),
+    degradedMode,
+    hardBlocked: false,
+    hardBlockReasons: [],
+    hidden: false,
+  };
+}
+
+function buildCompanyUpsertRow(
+  companyId: string,
+  jobId: string | null,
+  candidateSource: CandidateSource,
+  candidateId: string,
+  candidateDriverId: string | null,
+  score: CompanyV2Score,
+  embeddingProvider: EmbeddingProvider | null,
+) {
+  return {
+    company_id: companyId,
+    job_id: jobId,
+    candidate_source: candidateSource,
+    candidate_id: candidateId,
+    candidate_driver_id: candidateDriverId,
+    overall_score: score.overall,
+    rules_score: score.normalizedRules,
+    semantic_score: score.semanticScore,
+    behavior_score: score.behaviorScore,
+    confidence: score.confidence,
+    missing_fields: score.missingFields,
+    hard_blocked: score.hardBlocked,
+    hard_block_reasons: score.hardBlockReasons,
+    rank_tier: score.rankTier,
+    score_breakdown: score.scoreBreakdown,
+    top_reasons: score.topReasons,
+    cautions: score.cautions,
+    degraded_mode: score.degradedMode,
+    provider: embeddingProvider?.providerName ?? null,
+    model: embeddingProvider?.modelName ?? null,
+    computed_at: new Date().toISOString(),
+    version: 2,
+  };
+}
+
 async function purgeCompanyJobMatches(
   supabase: SupabaseClient,
   jobId: string,
@@ -704,41 +992,22 @@ async function processApplication(
   if (!jobs || jobs.length === 0) return;
 
   const candidate = extractCandidateFromApplication(app);
+  const behaviorCtx = await getCompanyBehaviorContext(supabase, effectiveCompanyId);
+  const candEmb = embeddingProvider
+    ? await getOrComputeEmbedding(supabase, embeddingProvider, "application", applicationId, candidate.textBlock)
+    : null;
 
   for (const jobRow of jobs) {
     const jobFeatures = extractJobFeatures(jobRow);
-    const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
+    const jobEmb = embeddingProvider
+      ? await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock)
+      : null;
 
-    // Semantic
-    if (embeddingProvider) {
-      const candEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "application", applicationId, candidate.textBlock);
-      const jobEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock);
-      if (candEmb && jobEmb) {
-        const sim = cosineSimilarity(candEmb, jobEmb);
-        result.semanticScore = Math.round(Math.max(0, sim) * 10);
-        result.overallScore = result.rulesScore + result.semanticScore;
-      }
-    }
+    const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmb, behaviorCtx);
+    if (score.hidden) continue;
 
     await supabase.from("company_driver_match_scores").upsert(
-      {
-        company_id: effectiveCompanyId,
-        job_id: jobRow.id,
-        candidate_source: "application",
-        candidate_id: applicationId,
-        candidate_driver_id: app.driver_id ?? null,
-        overall_score: Math.min(result.overallScore, 100),
-        rules_score: result.rulesScore,
-        semantic_score: result.semanticScore,
-        score_breakdown: result.scoreBreakdown,
-        top_reasons: result.topReasons,
-        cautions: result.cautions,
-        degraded_mode: result.degradedMode,
-        provider: embeddingProvider?.providerName ?? null,
-        model: embeddingProvider?.modelName ?? null,
-        computed_at: new Date().toISOString(),
-        version: 1,
-      },
+      buildCompanyUpsertRow(effectiveCompanyId, jobRow.id, "application", applicationId, app.driver_id ?? null, score, embeddingProvider),
       { onConflict: "company_id,job_id,candidate_source,candidate_id" },
     );
   }
@@ -770,43 +1039,37 @@ async function processLead(
     .select("*")
     .eq("company_id", effectiveCompanyId)
     .eq("status", "Active");
-  if (!jobs || jobs.length === 0) return;
 
   const candidate = extractCandidateFromLead(lead);
+  const behaviorCtx = await getCompanyBehaviorContext(supabase, effectiveCompanyId);
+  const candEmb = embeddingProvider
+    ? await getOrComputeEmbedding(supabase, embeddingProvider, "lead", leadId, candidate.textBlock)
+    : null;
+
+  if (!jobs || jobs.length === 0) {
+    // No jobs — score lead against company profile directly
+    const profileJob = await buildCompanyProfileJob(supabase, effectiveCompanyId);
+    const score = computeCompanyV2Score(candidate, profileJob, candEmb, null, behaviorCtx);
+    if (!score.hidden) {
+      await supabase.from("company_driver_match_scores").upsert(
+        buildCompanyUpsertRow(effectiveCompanyId, null, "lead", leadId, null, score, embeddingProvider),
+        { onConflict: "company_id,job_id,candidate_source,candidate_id" },
+      );
+    }
+    return;
+  }
 
   for (const jobRow of jobs) {
     const jobFeatures = extractJobFeatures(jobRow);
-    const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
+    const jobEmb = embeddingProvider
+      ? await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock)
+      : null;
 
-    if (embeddingProvider) {
-      const candEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "lead", leadId, candidate.textBlock);
-      const jobEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock);
-      if (candEmb && jobEmb) {
-        const sim = cosineSimilarity(candEmb, jobEmb);
-        result.semanticScore = Math.round(Math.max(0, sim) * 10);
-        result.overallScore = result.rulesScore + result.semanticScore;
-      }
-    }
+    const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmb, behaviorCtx);
+    if (score.hidden) continue;
 
     await supabase.from("company_driver_match_scores").upsert(
-      {
-        company_id: effectiveCompanyId,
-        job_id: jobRow.id,
-        candidate_source: "lead",
-        candidate_id: leadId,
-        candidate_driver_id: null,
-        overall_score: Math.min(result.overallScore, 100),
-        rules_score: result.rulesScore,
-        semantic_score: result.semanticScore,
-        score_breakdown: result.scoreBreakdown,
-        top_reasons: result.topReasons,
-        cautions: result.cautions,
-        degraded_mode: result.degradedMode,
-        provider: embeddingProvider?.providerName ?? null,
-        model: embeddingProvider?.modelName ?? null,
-        computed_at: new Date().toISOString(),
-        version: 1,
-      },
+      buildCompanyUpsertRow(effectiveCompanyId, jobRow.id, "lead", leadId, null, score, embeddingProvider),
       { onConflict: "company_id,job_id,candidate_source,candidate_id" },
     );
   }
@@ -822,6 +1085,8 @@ async function scoreCompanyCandidatesForJob(
   jobEmbedding: number[] | null,
   embeddingProvider: EmbeddingProvider | null,
 ) {
+  const behaviorCtx = await getCompanyBehaviorContext(supabase, companyId);
+
   // Applications
   const { data: apps } = await supabase
     .from("applications")
@@ -831,36 +1096,15 @@ async function scoreCompanyCandidatesForJob(
   if (apps) {
     for (const app of apps) {
       const candidate = extractCandidateFromApplication(app);
-      const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
+      const candEmb = embeddingProvider
+        ? await getOrComputeEmbedding(supabase, embeddingProvider, "application", app.id, candidate.textBlock)
+        : null;
 
-      if (jobEmbedding && embeddingProvider) {
-        const candEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "application", app.id, candidate.textBlock);
-        if (candEmb) {
-          const sim = cosineSimilarity(candEmb, jobEmbedding);
-          result.semanticScore = Math.round(Math.max(0, sim) * 10);
-          result.overallScore = result.rulesScore + result.semanticScore;
-        }
-      }
+      const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmbedding, behaviorCtx);
+      if (score.hidden) continue;
 
       await supabase.from("company_driver_match_scores").upsert(
-        {
-          company_id: companyId,
-          job_id: jobId,
-          candidate_source: "application",
-          candidate_id: app.id,
-          candidate_driver_id: app.driver_id ?? null,
-          overall_score: Math.min(result.overallScore, 100),
-          rules_score: result.rulesScore,
-          semantic_score: result.semanticScore,
-          score_breakdown: result.scoreBreakdown,
-          top_reasons: result.topReasons,
-          cautions: result.cautions,
-          degraded_mode: result.degradedMode,
-          provider: embeddingProvider?.providerName ?? null,
-          model: embeddingProvider?.modelName ?? null,
-          computed_at: new Date().toISOString(),
-          version: 1,
-        },
+        buildCompanyUpsertRow(companyId, jobId, "application", app.id, app.driver_id ?? null, score, embeddingProvider),
         { onConflict: "company_id,job_id,candidate_source,candidate_id" },
       );
     }
@@ -875,36 +1119,15 @@ async function scoreCompanyCandidatesForJob(
   if (leads) {
     for (const lead of leads) {
       const candidate = extractCandidateFromLead(lead);
-      const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
+      const candEmb = embeddingProvider
+        ? await getOrComputeEmbedding(supabase, embeddingProvider, "lead", lead.id, candidate.textBlock)
+        : null;
 
-      if (jobEmbedding && embeddingProvider) {
-        const candEmb = await getOrComputeEmbedding(supabase, embeddingProvider, "lead", lead.id, candidate.textBlock);
-        if (candEmb) {
-          const sim = cosineSimilarity(candEmb, jobEmbedding);
-          result.semanticScore = Math.round(Math.max(0, sim) * 10);
-          result.overallScore = result.rulesScore + result.semanticScore;
-        }
-      }
+      const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmbedding, behaviorCtx);
+      if (score.hidden) continue;
 
       await supabase.from("company_driver_match_scores").upsert(
-        {
-          company_id: companyId,
-          job_id: jobId,
-          candidate_source: "lead",
-          candidate_id: lead.id,
-          candidate_driver_id: null,
-          overall_score: Math.min(result.overallScore, 100),
-          rules_score: result.rulesScore,
-          semantic_score: result.semanticScore,
-          score_breakdown: result.scoreBreakdown,
-          top_reasons: result.topReasons,
-          cautions: result.cautions,
-          degraded_mode: result.degradedMode,
-          provider: embeddingProvider?.providerName ?? null,
-          model: embeddingProvider?.modelName ?? null,
-          computed_at: new Date().toISOString(),
-          version: 1,
-        },
+        buildCompanyUpsertRow(companyId, jobId, "lead", lead.id, null, score, embeddingProvider),
         { onConflict: "company_id,job_id,candidate_source,candidate_id" },
       );
     }
@@ -928,6 +1151,41 @@ function extractDriverFeatures(profile: Record<string, any>, application: Record
     haulerExperience: (application?.hauler as Record<string, boolean>) ?? {},
     routePrefs: (application?.route as Record<string, boolean>) ?? {},
     textBlock: buildDriverText(profile, application),
+  };
+}
+
+/**
+ * Build a synthetic JobFeatures from a company profile for jobless lead matching.
+ * Uses company location for geo-scoring; other fields are null (neutral scoring).
+ */
+async function buildCompanyProfileJob(
+  supabase: SupabaseClient,
+  companyId: string,
+): Promise<JobFeatures> {
+  const { data: cp } = await supabase
+    .from("company_profiles")
+    .select("company_name, address, about, company_goal")
+    .eq("id", companyId)
+    .maybeSingle();
+
+  const companyName = cp?.company_name ?? "Company";
+  const address = cp?.address ?? null;
+  const about = cp?.about ?? "";
+  const goal = cp?.company_goal ?? "";
+
+  return {
+    jobId: `profile-${companyId}`,
+    companyId,
+    title: `${companyName} — General Hiring`,
+    description: [about, goal].filter(Boolean).join(" "),
+    driverType: null,
+    routeType: null,
+    freightType: null,
+    teamDriving: null,
+    location: address,
+    pay: null,
+    status: "Active",
+    textBlock: `${companyName} hiring CDL drivers. ${about} ${goal}`.trim(),
   };
 }
 

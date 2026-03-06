@@ -17,10 +17,10 @@ export interface Subscription {
 }
 
 export const PLANS = {
-  free:      { label: "Free",      price: 0,   leads: 3,    priceId: "" },
-  starter:   { label: "Starter",   price: 49,  leads: 25,   priceId: import.meta.env.VITE_STRIPE_PRICE_STARTER ?? "" },
-  growth:    { label: "Growth",    price: 149, leads: 100,  priceId: import.meta.env.VITE_STRIPE_PRICE_GROWTH ?? "" },
-  unlimited: { label: "Unlimited", price: 299, leads: 9999, priceId: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED ?? "" },
+  free:      { label: "Free",      price: 0,   leads: 5,    priceId: "" },
+  starter:   { label: "Starter",   price: 39,  leads: 40,   priceId: import.meta.env.VITE_STRIPE_PRICE_STARTER ?? "" },
+  growth:    { label: "Growth",    price: 99,  leads: 150,  priceId: import.meta.env.VITE_STRIPE_PRICE_GROWTH ?? "" },
+  unlimited: { label: "Unlimited", price: 249, leads: 9999, priceId: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED ?? "" },
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,7 +29,7 @@ function rowToSub(row: Record<string, any>): Subscription {
     id: row.id,
     companyId: row.company_id,
     plan: row.plan ?? "free",
-    leadLimit: row.lead_limit ?? 3,
+    leadLimit: row.lead_limit ?? 5,
     leadsUsed: row.leads_used ?? 0,
     stripeCustomerId: row.stripe_customer_id ?? null,
     stripeSubscriptionId: row.stripe_subscription_id ?? null,
@@ -61,7 +61,7 @@ export function useSubscription(companyId: string | undefined) {
       // No subscription row — create a free one (RLS restricts to plan='free' only)
       const { data: newRow, error: insertErr } = await supabase
         .from("subscriptions")
-        .insert({ company_id: companyId!, plan: "free", lead_limit: 3, leads_used: 0 })
+        .insert({ company_id: companyId!, plan: "free", lead_limit: 5, leads_used: 0 })
         .select()
         .single();
 
@@ -69,6 +69,24 @@ export function useSubscription(companyId: string | undefined) {
       return rowToSub(newRow);
     },
     enabled: !!companyId,
+  });
+}
+
+/** Increment leads_used by 1 when a company contacts a lead */
+export function useIncrementLeadsUsed() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (companyId: string) => {
+      const { data, error } = await supabase.rpc("increment_leads_used", {
+        p_company_id: companyId,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, companyId) => {
+      qc.invalidateQueries({ queryKey: ["subscription", companyId] });
+    },
   });
 }
 

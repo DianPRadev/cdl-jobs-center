@@ -45,6 +45,11 @@ export interface DriverJobMatch {
   jobLogoUrl: string | null;
 }
 
+export type CompanyConfidence = "high" | "medium" | "low";
+export type RankTier = "hot" | "warm" | "explore" | "blocked";
+export type CompanyFeedback = "helpful" | "not_relevant" | "hide" | "contacted" | "interviewed" | "hired";
+export type CompanyMatchEventType = "view" | "save" | "message" | "open_profile" | "contact";
+
 export interface CompanyDriverMatch {
   candidateId: string;
   candidateSource: "application" | "lead";
@@ -52,9 +57,15 @@ export interface CompanyDriverMatch {
   overallScore: number;
   rulesScore: number;
   semanticScore: number | null;
+  behaviorScore: number;
+  confidence: CompanyConfidence;
+  rankTier: RankTier;
   topReasons: MatchReason[];
   cautions: MatchReason[];
   scoreBreakdown: ScoreBreakdown;
+  missingFields: string[];
+  hardBlocked: boolean;
+  hardBlockReasons: string[];
   degradedMode: boolean;
   computedAt: string;
   candidateName: string;
@@ -228,6 +239,15 @@ function rowToCompanyDriverMatch(
     }
   }
 
+  const asCompanyConfidence = (v: unknown): CompanyConfidence => {
+    if (v === "high" || v === "medium" || v === "low") return v;
+    return "medium";
+  };
+  const asRankTier = (v: unknown): RankTier => {
+    if (v === "hot" || v === "warm" || v === "explore" || v === "blocked") return v;
+    return "explore";
+  };
+
   return {
     candidateId: row.candidate_id as string,
     candidateSource: row.candidate_source as CompanyDriverMatch["candidateSource"],
@@ -235,9 +255,15 @@ function rowToCompanyDriverMatch(
     overallScore: row.overall_score as number,
     rulesScore: row.rules_score as number,
     semanticScore: (row.semantic_score as number | null) ?? null,
+    behaviorScore: (row.behavior_score as number) ?? 0,
+    confidence: asCompanyConfidence(row.confidence),
+    rankTier: asRankTier(row.rank_tier),
     topReasons: (row.top_reasons ?? []) as MatchReason[],
     cautions: (row.cautions ?? []) as MatchReason[],
     scoreBreakdown: (row.score_breakdown ?? {}) as ScoreBreakdown,
+    missingFields: Array.isArray(row.missing_fields) ? (row.missing_fields as string[]) : [],
+    hardBlocked: (row.hard_blocked as boolean) ?? false,
+    hardBlockReasons: Array.isArray(row.hard_block_reasons) ? (row.hard_block_reasons as string[]) : [],
     degradedMode: (row.degraded_mode as boolean) ?? false,
     computedAt: row.computed_at as string,
     candidateName: name,
@@ -442,28 +468,49 @@ export function useCompanyDriverMatches(
   return useQuery({
     queryKey: ["company-matches", companyId, opts.jobId, opts.source, opts.limit],
     queryFn: async () => {
-      let query = supabase
-        .from("company_driver_match_scores")
-        .select("*, jobs!inner(status)")
-        .eq("company_id", companyId!)
-        .eq("jobs.status", "Active")
-        .order("overall_score", { ascending: false });
+      // Fetch scores — job-linked rows require active job, jobless rows (profile-based) are always included
+      let scores: Record<string, unknown>[] = [];
 
       if (opts.jobId) {
-        query = query.eq("job_id", opts.jobId);
-      }
-      if (opts.source) {
-        query = query.eq("candidate_source", opts.source);
-      }
-      // When no jobId filter, the same person appears once per job they match against.
-      // We need ALL rows to deduplicate properly, so only apply SQL limit when
-      // viewing a specific job (no dedup needed in that case).
-      if (opts.limit && opts.jobId) {
-        query = query.limit(opts.limit);
+        // Specific job filter — only job-linked rows
+        const { data, error } = await supabase
+          .from("company_driver_match_scores")
+          .select("*, jobs!inner(status)")
+          .eq("company_id", companyId!)
+          .eq("job_id", opts.jobId)
+          .eq("jobs.status", "Active")
+          .order("overall_score", { ascending: false })
+          .limit(opts.limit ?? 10000);
+        if (error) throw error;
+        scores = (data ?? []) as Record<string, unknown>[];
+      } else {
+        // All matches: fetch job-linked (active only) + jobless (profile-based) in parallel
+        const [jobLinked, jobless] = await Promise.all([
+          supabase
+            .from("company_driver_match_scores")
+            .select("*, jobs!inner(status)")
+            .eq("company_id", companyId!)
+            .eq("jobs.status", "Active")
+            .not("job_id", "is", null)
+            .order("overall_score", { ascending: false }),
+          supabase
+            .from("company_driver_match_scores")
+            .select("*")
+            .eq("company_id", companyId!)
+            .is("job_id", null)
+            .order("overall_score", { ascending: false }),
+        ]);
+        if (jobLinked.error) throw jobLinked.error;
+        if (jobless.error) throw jobless.error;
+        scores = [
+          ...((jobLinked.data ?? []) as Record<string, unknown>[]),
+          ...((jobless.data ?? []) as Record<string, unknown>[]),
+        ];
       }
 
-      const { data: scores, error } = await query;
-      if (error) throw error;
+      if (opts.source) {
+        scores = scores.filter((s) => s.candidate_source === opts.source);
+      }
       if (!scores || scores.length === 0) return [];
 
       const appIds = [
@@ -546,6 +593,40 @@ export function useCompanyDriverMatches(
   });
 }
 
+/**
+ * Fetch the best match score per lead for a company (used for teaser on locked leads).
+ * Returns a Map<leadId, { score, tier, topReason }>.
+ */
+export function useLeadMatchScores(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ["lead-match-scores", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_driver_match_scores")
+        .select("candidate_id, overall_score, rank_tier, top_reasons")
+        .eq("company_id", companyId!)
+        .eq("candidate_source", "lead")
+        .order("overall_score", { ascending: false });
+      if (error) throw error;
+
+      // Keep only the best score per lead
+      const map = new Map<string, { score: number; tier: RankTier; topReason: string | null }>();
+      for (const row of data ?? []) {
+        if (!map.has(row.candidate_id)) {
+          const reasons = Array.isArray(row.top_reasons) ? row.top_reasons : [];
+          map.set(row.candidate_id, {
+            score: row.overall_score ?? 0,
+            tier: asRankTier(row.rank_tier),
+            topReason: reasons.length > 0 ? (reasons[0] as { text?: string }).text ?? null : null,
+          });
+        }
+      }
+      return map;
+    },
+    enabled: !!companyId,
+  });
+}
+
 export function useDriverFeedbackMap(driverId: string | undefined) {
   return useQuery({
     queryKey: ["driver-feedback-map", driverId],
@@ -611,6 +692,85 @@ export function useRefreshMyMatches(driverId: string | undefined) {
       qc.invalidateQueries({ queryKey: ["driver-matches", driverId] });
       qc.invalidateQueries({ queryKey: ["driver-all-matches", driverId] });
       qc.invalidateQueries({ queryKey: ["driver-match-score", driverId] });
+    },
+  });
+}
+
+// ── Company feedback & events ──────────────────────────────
+
+export function useCompanyFeedbackMap(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ["company-feedback-map", companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_match_feedback")
+        .select("candidate_source, candidate_id, feedback")
+        .eq("company_id", companyId!);
+      if (error) throw error;
+      const map = new Map<string, CompanyFeedback>();
+      for (const row of data ?? []) {
+        map.set(`${row.candidate_source}:${row.candidate_id}`, row.feedback as CompanyFeedback);
+      }
+      return map;
+    },
+    enabled: !!companyId,
+  });
+}
+
+export function useRecordCompanyMatchFeedback(companyId: string | undefined) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      jobId: string;
+      candidateSource: "application" | "lead";
+      candidateId: string;
+      feedback: CompanyFeedback;
+      reasonCode?: string;
+    }) => {
+      if (!companyId) throw new Error("No company ID");
+      const { error } = await supabase
+        .from("company_match_feedback")
+        .upsert(
+          {
+            company_id: companyId,
+            job_id: params.jobId,
+            candidate_source: params.candidateSource,
+            candidate_id: params.candidateId,
+            feedback: params.feedback,
+            reason_code: params.reasonCode ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "company_id,job_id,candidate_source,candidate_id" },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["company-matches", companyId] });
+      qc.invalidateQueries({ queryKey: ["company-feedback-map", companyId] });
+    },
+  });
+}
+
+export function useTrackCompanyMatchEvent(companyId: string | undefined) {
+  return useMutation({
+    mutationFn: async (params: {
+      jobId: string;
+      candidateSource: "application" | "lead";
+      candidateId: string;
+      eventType: CompanyMatchEventType;
+      metadata?: Record<string, unknown>;
+    }) => {
+      if (!companyId) return;
+      const { error } = await supabase.from("company_match_events").insert({
+        company_id: companyId,
+        job_id: params.jobId,
+        candidate_source: params.candidateSource,
+        candidate_id: params.candidateId,
+        event_type: params.eventType,
+        metadata: params.metadata ?? {},
+      });
+      if (error) throw error;
     },
   });
 }

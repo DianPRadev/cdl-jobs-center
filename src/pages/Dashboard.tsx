@@ -27,8 +27,8 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { useUnreadCount } from "@/hooks/useMessages";
 import { useLeads, useUpdateLeadStatus, useSyncLeads, useAutoSyncLeads } from "@/hooks/useLeads";
-import { useSubscription, useCancelSubscription, PLANS, type Plan } from "@/hooks/useSubscription";
-import { useCompanyDriverMatches, useMatchingRollout } from "@/hooks/useMatchScores";
+import { useSubscription, useCancelSubscription, useIncrementLeadsUsed, PLANS, type Plan } from "@/hooks/useSubscription";
+import { useCompanyDriverMatches, useMatchingRollout, useCompanyFeedbackMap, useRecordCompanyMatchFeedback, useTrackCompanyMatchEvent, useLeadMatchScores, type CompanyFeedback, type RankTier } from "@/hooks/useMatchScores";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +43,6 @@ import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
-import { useVerificationRequest } from "@/hooks/useVerification";
 import { ListPagination } from "@/components/ListPagination";
 
 const FREIGHT_TYPES = [
@@ -362,6 +361,22 @@ const PipelineColumn = ({
 // ── AI Matches content (extracted so hook is only called when tab is active) ──
 const AI_MATCH_PAGE_SIZE = 10;
 
+const TIER_CONFIG: Record<RankTier, { label: string; class: string; dotClass: string }> = {
+  hot: { label: "Hot", class: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", dotClass: "bg-red-500" },
+  warm: { label: "Warm", class: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", dotClass: "bg-amber-500" },
+  explore: { label: "Explore", class: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", dotClass: "bg-blue-500" },
+  blocked: { label: "Blocked", class: "bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-400", dotClass: "bg-gray-400" },
+};
+
+const FEEDBACK_OPTIONS: { value: CompanyFeedback; label: string; icon: string }[] = [
+  { value: "helpful", label: "Helpful", icon: "👍" },
+  { value: "not_relevant", label: "Not Relevant", icon: "👎" },
+  { value: "contacted", label: "Contacted", icon: "📞" },
+  { value: "interviewed", label: "Interviewed", icon: "🤝" },
+  { value: "hired", label: "Hired", icon: "✅" },
+  { value: "hide", label: "Hide", icon: "🚫" },
+];
+
 const AiMatchesContent = ({
   userId,
   activeJobs,
@@ -385,6 +400,8 @@ const AiMatchesContent = ({
 }) => {
   const [aiPage, setAiPage] = useState(0);
   const [aiSearch, setAiSearch] = useState("");
+  const [aiTierFilter, setAiTierFilter] = useState<string>("all");
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const {
     data: matches = [],
     isLoading: matchesLoading,
@@ -394,21 +411,33 @@ const AiMatchesContent = ({
     source: aiSourceFilter !== "all" ? (aiSourceFilter as "application" | "lead") : undefined,
     limit: matchLimit,
   });
+  const { data: feedbackMap = new Map() } = useCompanyFeedbackMap(userId);
+  const { mutate: recordFeedback, isPending: feedbackPending } = useRecordCompanyMatchFeedback(userId);
+  const { mutate: trackEvent } = useTrackCompanyMatchEvent(userId);
 
-  // Client-side search filter
-  const filteredMatches = aiSearch.trim()
-    ? matches.filter((m) => {
-        const q = aiSearch.toLowerCase();
-        return (
-          m.candidateName?.toLowerCase().includes(q) ||
-          m.candidateEmail?.toLowerCase().includes(q) ||
-          m.candidatePhone?.toLowerCase().includes(q) ||
-          m.candidateState?.toLowerCase().includes(q) ||
-          m.candidateDriverType?.toLowerCase().includes(q) ||
-          m.candidateLicenseClass?.toLowerCase().includes(q)
-        );
-      })
-    : matches;
+  // Client-side filters
+  const filteredMatches = matches.filter((m) => {
+    if (aiTierFilter !== "all" && m.rankTier !== aiTierFilter) return false;
+    if (m.rankTier === "blocked") return false; // Hide blocked by default
+    if (aiSearch.trim()) {
+      const q = aiSearch.toLowerCase();
+      return (
+        m.candidateName?.toLowerCase().includes(q) ||
+        m.candidateEmail?.toLowerCase().includes(q) ||
+        m.candidatePhone?.toLowerCase().includes(q) ||
+        m.candidateState?.toLowerCase().includes(q) ||
+        m.candidateDriverType?.toLowerCase().includes(q) ||
+        m.candidateLicenseClass?.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  // Tier counts for filter badges
+  const tierCounts = matches.reduce<Record<string, number>>((acc, m) => {
+    if (m.rankTier !== "blocked") acc[m.rankTier] = (acc[m.rankTier] ?? 0) + 1;
+    return acc;
+  }, {});
 
   const scoreBadgeClass = (score: number) => {
     if (score >= 80) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
@@ -417,11 +446,49 @@ const AiMatchesContent = ({
     return "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
   };
 
+  const confidenceLabel = (c: string) => {
+    if (c === "high") return "High confidence";
+    if (c === "medium") return "Medium confidence";
+    return "Low confidence";
+  };
+
+  const handleFeedback = (m: typeof matches[0], feedback: CompanyFeedback) => {
+    recordFeedback({
+      jobId: aiJobFilter !== "all" ? aiJobFilter : (activeJobs[0]?.id ?? ""),
+      candidateSource: m.candidateSource,
+      candidateId: m.candidateId,
+      feedback,
+    });
+  };
+
   return (
     <div>
       <h2 className="font-display font-semibold text-base mb-4">
         AI-Matched Candidates
       </h2>
+
+      {/* Tier filter tabs */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {[
+          { value: "all", label: "All", count: matches.filter(m => m.rankTier !== "blocked").length },
+          { value: "hot", label: "Hot", count: tierCounts["hot"] ?? 0 },
+          { value: "warm", label: "Warm", count: tierCounts["warm"] ?? 0 },
+          { value: "explore", label: "Explore", count: tierCounts["explore"] ?? 0 },
+        ].map(({ value, label, count }) => (
+          <button
+            key={value}
+            onClick={() => { setAiTierFilter(value); setAiPage(0); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+              aiTierFilter === value
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:border-primary/50"
+            }`}
+          >
+            {value !== "all" && <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${TIER_CONFIG[value as RankTier]?.dotClass}`} />}
+            {label} ({count})
+          </button>
+        ))}
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -472,19 +539,39 @@ const AiMatchesContent = ({
       ) : filteredMatches.length === 0 ? (
         <EmptyState
           icon={Sparkles}
-          heading={aiSearch.trim() ? "No candidates match your search." : "No matches found"}
-          description={aiSearch.trim() ? undefined : "Post a job to start getting AI-matched candidates."}
+          heading={aiSearch.trim() || aiTierFilter !== "all" ? "No candidates match your filters." : "No matches found"}
+          description={aiSearch.trim() || aiTierFilter !== "all" ? "Try adjusting your filters." : "Matches are computed automatically. Check back soon or post a job for more targeted results."}
         />
       ) : (() => {
         const pageMatches = filteredMatches.slice(aiPage * AI_MATCH_PAGE_SIZE, (aiPage + 1) * AI_MATCH_PAGE_SIZE);
         return (
         <>
         <div className="space-y-3">
-          {pageMatches.map((m) => (
-            <div key={`${m.candidateId}-${m.candidateSource}`} className="border border-border bg-card px-5 py-4">
+          {pageMatches.map((m) => {
+            const cardKey = `${m.candidateId}-${m.candidateSource}`;
+            const isExpanded = expandedCard === cardKey;
+            const tier = TIER_CONFIG[m.rankTier] ?? TIER_CONFIG.explore;
+            const existingFeedback = feedbackMap.get(`${m.candidateSource}:${m.candidateId}`);
+
+            return (
+            <div
+              key={cardKey}
+              className={`border bg-card px-5 py-4 transition-colors ${
+                m.rankTier === "hot" ? "border-red-500/30" : m.rankTier === "warm" ? "border-amber-500/20" : "border-border"
+              }`}
+              onClick={() => {
+                trackEvent({ jobId: aiJobFilter !== "all" ? aiJobFilter : "", candidateSource: m.candidateSource, candidateId: m.candidateId, eventType: "view" });
+              }}
+            >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    {/* Tier badge */}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full ${tier.class}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${tier.dotClass}`} />
+                      {tier.label}
+                    </span>
+                    {/* Score */}
                     <span className={`inline-flex items-center px-2 py-0.5 text-xs font-bold rounded-full ${scoreBadgeClass(m.overallScore)}`}>
                       {m.overallScore}%
                     </span>
@@ -495,6 +582,14 @@ const AiMatchesContent = ({
                         : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
                     }`}>
                       {m.candidateSource === "application" ? "Application" : "Lead"}
+                    </span>
+                    {/* Confidence */}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                      m.confidence === "high" ? "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400" :
+                      m.confidence === "medium" ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" :
+                      "bg-red-50 text-red-500 dark:bg-red-900/20 dark:text-red-400"
+                    }`}>
+                      {confidenceLabel(m.confidence)}
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -507,13 +602,22 @@ const AiMatchesContent = ({
                   </p>
                   {m.topReasons.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {m.topReasons.slice(0, 2).map((r, i) => (
+                      {m.topReasons.slice(0, 3).map((r, i) => (
                         <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
                           r.positive
                             ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
                             : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
                         }`}>
                           {r.text}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m.cautions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {m.cautions.slice(0, 2).map((c, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                          {c.text}
                         </span>
                       ))}
                     </div>
@@ -532,10 +636,81 @@ const AiMatchesContent = ({
                   <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("messages")}>
                     <MessageSquare className="h-3 w-3 mr-1" /> Message
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs px-2"
+                    onClick={(e) => { e.stopPropagation(); setExpandedCard(isExpanded ? null : cardKey); }}
+                  >
+                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
                 </div>
               </div>
+
+              {/* Expanded details */}
+              {isExpanded && (
+                <div className="mt-4 pt-4 border-t border-border space-y-4">
+                  {/* Score breakdown */}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-2">Score Breakdown</p>
+                      <div className="space-y-2">
+                        {Object.entries(m.scoreBreakdown).map(([key, val]) => {
+                          const max = Math.max(1, val.maxScore);
+                          const pct = Math.round((val.score / max) * 100);
+                          return (
+                            <div key={key}>
+                              <div className="flex justify-between text-[11px] mb-0.5">
+                                <span className="font-medium capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+                                <span className="text-muted-foreground">{val.score}/{val.maxScore}</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, pct)}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      {m.missingFields.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold mb-1.5">Missing Data</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {m.missingFields.map((f) => (
+                              <span key={f} className="text-[11px] px-2 py-0.5 rounded-full border border-primary/30 bg-primary/5 text-primary">{f}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Feedback buttons */}
+                  <div>
+                    <p className="text-xs font-semibold mb-2">Your Feedback</p>
+                    <div className="flex flex-wrap gap-2">
+                      {FEEDBACK_OPTIONS.map(({ value, label, icon }) => (
+                        <button
+                          key={value}
+                          onClick={(e) => { e.stopPropagation(); handleFeedback(m, value); }}
+                          disabled={feedbackPending}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            existingFeedback === value
+                              ? "border-primary bg-primary/10 text-primary font-semibold"
+                              : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                          }`}
+                        >
+                          {icon} {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
         <ListPagination
           page={aiPage}
@@ -603,7 +778,9 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   useAutoSyncLeads();
   const { data: subscription } = useSubscription(user!.id);
   const cancelSubscription = useCancelSubscription();
+  const incrementLeadsUsed = useIncrementLeadsUsed();
   const rollout = useMatchingRollout();
+  const { data: leadMatchScores } = useLeadMatchScores(user?.id);
   const [portalLoading, setPortalLoading] = useState(false);
   const [resubscribeOpen, setResubscribeOpen] = useState(false);
   const [selectedResub, setSelectedResub] = useState<Plan | null>(null);
@@ -650,16 +827,17 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
     }
   };
 
-  const leadLimit = subscription ? PLANS[subscription.plan].leads : 3;
+  const leadLimit = subscription ? PLANS[subscription.plan].leads : 5;
 
-  // Stable set of unlocked lead IDs based on position in unfiltered list.
-  // Prevents paywall bypass via filter manipulation (fix: audit finding #1).
+  // Stable set of unlocked lead IDs based on creation order across ALL leads.
+  // Uses all leads (including dismissed/hired) so dismissing doesn't free a slot.
   const unlockedLeadIds = useMemo(() => {
     if (leadLimit >= 9999) return null; // unlimited plan
-    const active = leads.filter((l) => l.status !== "dismissed" && l.status !== "hired");
+    // Sort by created_at descending (newest first) to match display order
+    const sorted = [...leads].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const ids = new Set<string>();
-    for (let i = 0; i < Math.min(active.length, leadLimit); i++) {
-      ids.add(active[i].id);
+    for (let i = 0; i < Math.min(sorted.length, leadLimit); i++) {
+      ids.add(sorted[i].id);
     }
     return ids;
   }, [leads, leadLimit]);
@@ -772,6 +950,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [contactName, setContactName] = useState("");
   const [contactTitle, setContactTitle] = useState("");
+  const [isVerified, setIsVerified] = useState<boolean | null>(null);
   const [companyGoal, setCompanyGoal] = useState("");
   const [profileSaveStatus, setProfileSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
@@ -789,9 +968,6 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   });
   const hasUnsavedChanges = lastSavedSnapshot !== null && currentProfileSnapshot !== lastSavedSnapshot;
   const isProfileSaved = profileSaveStatus === "saved" && !hasUnsavedChanges;
-
-  // Verification request state (status only — form is on /verification page)
-  const { data: verificationRequest, isLoading: verificationLoading } = useVerificationRequest(user!.id);
 
   // Fetch applications for this company
   const appsKey = ["company-applications", user!.id];
@@ -863,6 +1039,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
         setContactName(loadedProfile.contactName);
         setContactTitle(loadedProfile.contactTitle);
         setCompanyGoal(loadedProfile.companyGoal);
+        setIsVerified(data?.is_verified ?? false);
         setLastSavedSnapshot(snapshotCompanyProfile(loadedProfile));
       })
       .catch((err: unknown) => { console.error("Failed to load company profile:", err); });
@@ -1104,7 +1281,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
         </div>
 
         {/* Verification status banner */}
-        {!verificationLoading && verificationRequest?.status === "approved" && (
+        {isVerified === true && (
           <div className="flex items-center gap-4 px-5 py-3.5 mb-6 bg-green-500/10 border border-green-500/30">
             <CheckCircle className="h-6 w-6 text-green-500 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -1113,32 +1290,13 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
             </div>
           </div>
         )}
-        {!verificationLoading && verificationRequest?.status === "pending" && (
+        {isVerified === false && (
           <div className="flex items-center gap-4 px-5 py-3.5 mb-6 bg-amber-500/10 border border-amber-500/30">
             <ShieldCheck className="h-6 w-6 text-amber-500 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm text-amber-700 dark:text-amber-400">Verification under review</p>
-              <p className="text-xs text-muted-foreground">Your request is being reviewed. We'll notify you once a decision is made.</p>
+              <p className="font-semibold text-sm">Verification pending</p>
+              <p className="text-xs text-muted-foreground">Your company is being reviewed by our team. You'll be notified once approved.</p>
             </div>
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/verification">View Details</Link>
-            </Button>
-          </div>
-        )}
-        {!verificationLoading && verificationRequest?.status !== "approved" && verificationRequest?.status !== "pending" && (
-          <div className="flex items-center gap-4 px-5 py-3.5 mb-6 bg-amber-500/10 border border-amber-500/30">
-            <ShieldCheck className="h-6 w-6 text-amber-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm">Get your company verified</p>
-              <p className="text-xs text-muted-foreground">
-                {verificationRequest?.status === "rejected"
-                  ? "Your previous request was not approved. You can submit a new one with updated information."
-                  : "A verified badge builds trust with drivers and helps you stand out."}
-              </p>
-            </div>
-            <Button size="sm" asChild>
-              <Link to="/verification">{verificationRequest?.status === "rejected" ? "Resubmit" : "Request Verification"}</Link>
-            </Button>
           </div>
         )}
 
@@ -1453,11 +1611,11 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
               </div>
             </div>
 
-            {applications.length === 0 ? (
-              <div className="border border-border bg-card px-5 py-12 text-center text-muted-foreground text-sm">
-                <p>No applications received yet. The pipeline will show applicants as they apply.</p>
+            {applications.length === 0 && (
+              <div className="border border-border bg-card px-5 py-4 text-center text-muted-foreground text-sm mb-4">
+                <p>No applications received yet. New applicants will appear in the pipeline below.</p>
               </div>
-            ) : (
+            )}
               <DndContext
                 collisionDetection={pointerWithin}
                 onDragStart={(e) => setDragActiveId(e.active.id as string)}
@@ -1504,7 +1662,6 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                   })() : null}
                 </DragOverlay>
               </DndContext>
-            )}
           </div>
         )}
 
@@ -1818,27 +1975,67 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                     {pageLeads.map((lead) => {
                       const isLocked = unlockedLeadIds !== null && !unlockedLeadIds.has(lead.id);
 
-                      return (
-                      <div key={lead.id} className={`relative border bg-card p-4 transition-colors ${isLocked ? "border-border" : lead.status === "dismissed" ? "border-border opacity-60" : lead.status === "new" ? "border-blue-200 dark:border-blue-800" : "border-border"}`}>
-                        {isLocked && (
-                          <div className="absolute inset-0 z-10 backdrop-blur-sm bg-background/60 flex items-center justify-center">
-                            <Link to="/pricing">
-                              <Button size="sm" className="text-xs">Upgrade to Unlock</Button>
+                      if (isLocked) {
+                        const matchInfo = leadMatchScores?.get(lead.id);
+                        return (
+                          <div key={lead.id} className="border border-dashed border-border bg-muted/30 px-4 py-3 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-muted-foreground">Driver lead available</span>
+                                  {matchInfo && matchInfo.score > 0 && (
+                                    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                      matchInfo.score >= 70 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                        : matchInfo.score >= 40 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}>
+                                      <Sparkles className="h-3 w-3" />
+                                      {matchInfo.score}% match
+                                    </span>
+                                  )}
+                                </div>
+                                {matchInfo?.topReason && (
+                                  <p className="text-xs text-muted-foreground/70 truncate mt-0.5">{matchInfo.topReason}</p>
+                                )}
+                              </div>
+                            </div>
+                            <Link to="/pricing" className="shrink-0">
+                              <Button size="sm" variant="outline" className="text-xs h-7">
+                                Unlock with Upgrade
+                              </Button>
                             </Link>
                           </div>
-                        )}
-                        <div className={`flex items-start justify-between gap-3 ${isLocked ? "select-none" : ""}`}>
+                        );
+                      }
+
+                      return (
+                      <div key={lead.id} className={`relative border bg-card transition-colors p-4 ${lead.status === "dismissed" ? "border-border opacity-60" : lead.status === "new" ? "border-blue-200 dark:border-blue-800" : "border-border"}`}>
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0 flex-1">
                             {/* Avatar */}
                             <div className="h-10 w-10 shrink-0 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
                               {lead.fullName.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}
                             </div>
                             <div className="min-w-0 flex-1">
-                              {/* Name + status */}
+                              {/* Name + status + match score */}
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="font-medium text-sm">{lead.fullName}</p>
                                 <span className={`h-2 w-2 rounded-full shrink-0 ${statusDot(lead.status)}`} title={statusLabel(lead.status)} />
                                 <span className="text-[10px] text-muted-foreground">{statusLabel(lead.status)}</span>
+                                {(() => {
+                                  const m = leadMatchScores?.get(lead.id);
+                                  if (!m || m.score <= 0) return null;
+                                  return (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                      m.score >= 70 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                        : m.score >= 40 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                        : "bg-muted text-muted-foreground"
+                                    }`}>
+                                      <Sparkles className="h-3 w-3" />{m.score}%
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               {/* Contact info */}
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
@@ -1881,12 +2078,10 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                                   {lead.truckYear} {lead.truckMake} {lead.truckModel}
                                 </div>
                               )}
-                              {/* Time */}
                               <p className="text-[10px] text-muted-foreground mt-1.5">Added {timeAgo(lead.syncedAt)}</p>
                             </div>
                           </div>
                           {/* Actions */}
-                          {!isLocked && (
                           <div className="flex flex-col gap-1.5 shrink-0 relative">
                             {lead.status !== "contacted" && lead.status !== "hired" && (
                               <Button
@@ -1945,6 +2140,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                                     className="flex items-center gap-2 w-full px-3 py-2 text-sm bg-primary/10 hover:bg-primary/20 text-primary rounded transition-colors overflow-hidden"
                                     onClick={() => {
                                       updateLeadStatus.mutate({ leadId: lead.id, status: "contacted" });
+                                      if (lead.status !== "contacted") incrementLeadsUsed.mutate(user!.id);
                                       setContactLeadId(null);
                                     }}
                                   >
@@ -1958,6 +2154,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                                     className="flex items-center gap-2 w-full px-3 py-2 text-sm bg-primary/10 hover:bg-primary/20 text-primary rounded transition-colors overflow-hidden"
                                     onClick={() => {
                                       updateLeadStatus.mutate({ leadId: lead.id, status: "contacted" });
+                                      if (lead.status !== "contacted") incrementLeadsUsed.mutate(user!.id);
                                       setContactLeadId(null);
                                     }}
                                   >
@@ -2014,7 +2211,6 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                               </div>
                             )}
                           </div>
-                          )}
                         </div>
                       </div>
                       );

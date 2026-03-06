@@ -230,7 +230,7 @@ export function useAdminSubscriptions() {
             companyId: row.company_id,
             companyName: companyName ?? "Unknown",
             plan: row.plan ?? "free",
-            leadLimit: row.lead_limit ?? 3,
+            leadLimit: row.lead_limit ?? 5,
             leadsUsed: row.leads_used ?? 0,
             status: row.status ?? "active",
             currentPeriodEnd: row.current_period_end ?? null,
@@ -242,7 +242,7 @@ export function useAdminSubscriptions() {
             companyId,
             companyName: companyName ?? "Unknown",
             plan: "free",
-            leadLimit: 3,
+            leadLimit: 5,
             leadsUsed: 0,
             status: "active",
             currentPeriodEnd: null,
@@ -618,6 +618,7 @@ export function useToggleCompanyVerified() {
       qc.invalidateQueries({ queryKey: ["company-profile", vars.companyId] });
       qc.invalidateQueries({ queryKey: ["company-logo", vars.companyId] });
       qc.invalidateQueries({ queryKey: ["admin-verification-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-unverified-companies"] });
     },
   });
 }

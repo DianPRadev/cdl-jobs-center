@@ -220,6 +220,22 @@ function AdminDashboardInner() {
   const [verificationSearch, setVerificationSearch] = useState("");
   const pendingVerifications = verificationRequests.filter((r) => r.status === "pending");
 
+  /* unverified new companies */
+  const { data: unverifiedCompanies = [] } = useQuery({
+    queryKey: ["admin-unverified-companies"],
+    enabled: !!user && user.role === "admin",
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_profiles")
+        .select("id, company_name, phone, email, address, website, created_at")
+        .or("is_verified.is.null,is_verified.eq.false")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as { id: string; company_name: string | null; phone: string | null; email: string | null; address: string | null; website: string | null; created_at: string }[];
+    },
+  });
+
   /* tab state — synced with URL so refresh preserves the tab */
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab") as AdminTab | null;
@@ -424,7 +440,7 @@ function AdminDashboardInner() {
           </button>
           <button className={tabClass("verification")} onClick={() => setActiveTab("verification")}>
             <span className="flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5" /> Verification{pendingVerifications.length > 0 && ` (${pendingVerifications.length})`}
+              <ShieldCheck className="h-3.5 w-3.5" /> Verification{(pendingVerifications.length + unverifiedCompanies.length) > 0 && ` (${pendingVerifications.length + unverifiedCompanies.length})`}
             </span>
           </button>
         </div>
@@ -611,7 +627,7 @@ function AdminDashboardInner() {
                   {recentSignups.map((u) => (
                     <div key={u.id} className="flex items-center justify-between gap-3 px-5 py-3">
                       <div className="flex items-center gap-2 min-w-0">
-                        <p className="text-sm font-medium truncate">{u.name}</p>
+                        <p className="text-sm font-medium truncate">{u.role === "company" && u.companyName ? u.companyName : u.name}</p>
                         {roleBadge(u.role)}
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
@@ -742,7 +758,7 @@ function AdminDashboardInner() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <p className="font-semibold text-foreground text-sm">
-                              {u.name}
+                              {u.role === "company" && u.companyName ? u.companyName : u.name}
                             </p>
                             {roleBadge(u.role)}
                             {Date.now() - new Date(u.createdAt).getTime() < 48 * 60 * 60 * 1000 && (
@@ -785,10 +801,10 @@ function AdminDashboardInner() {
                             {u.yearsExp && (
                               <span>{u.yearsExp} yrs exp</span>
                             )}
-                            {u.companyName && (
+                            {u.role === "company" && u.name && u.companyName && u.name !== u.companyName && (
                               <span className="flex items-center gap-1">
-                                <Building2 className="h-3 w-3" />
-                                {u.companyName}
+                                <UserCheck className="h-3 w-3" />
+                                {u.name}
                               </span>
                             )}
                           </div>
@@ -1507,11 +1523,17 @@ function AdminDashboardInner() {
                 (r.companyEmail ?? "").toLowerCase().includes(verificationSearch.toLowerCase())
               )
             : pendingVerifications;
+          const filteredUnverified = verificationSearch.trim()
+            ? unverifiedCompanies.filter((c) =>
+                (c.company_name ?? "").toLowerCase().includes(verificationSearch.toLowerCase()) ||
+                (c.email ?? "").toLowerCase().includes(verificationSearch.toLowerCase())
+              )
+            : unverifiedCompanies;
           return (
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
               <h2 className="font-display font-semibold text-base">
-                Company Verification Requests
+                Company Verification
               </h2>
               <Input
                 placeholder="Search companies..."
@@ -1521,7 +1543,59 @@ function AdminDashboardInner() {
               />
             </div>
 
-            {/* Pending */}
+            {/* New Company Registrations awaiting approval */}
+            <div className="border border-border bg-card">
+              <div className="px-5 py-3 border-b border-border flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-blue-500" />
+                <h3 className="font-semibold text-sm">New Registrations ({filteredUnverified.length})</h3>
+              </div>
+              {filteredUnverified.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  No new company registrations awaiting approval.
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {filteredUnverified.map((c) => (
+                    <div key={c.id} className="px-5 py-4 flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{c.company_name || "Unnamed Company"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.email}{c.phone ? ` · ${c.phone}` : ""}{c.created_at ? ` · Registered ${formatDate(c.created_at)}` : ""}
+                        </p>
+                        {c.address && <p className="text-xs text-muted-foreground mt-0.5">{c.address}</p>}
+                        {c.website && <p className="text-xs text-primary mt-0.5">{c.website}</p>}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          size="sm"
+                          disabled={toggleVerified.isPending}
+                          onClick={() => {
+                            toggleVerified.mutate({ companyId: c.id, verified: true }, {
+                              onSuccess: () => {
+                                toast.success(`${c.company_name || "Company"} approved!`);
+                              },
+                              onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to approve."),
+                            });
+                          }}
+                        >
+                          <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/admin?tab=users&search=${encodeURIComponent(c.company_name || c.email || "")}`)}
+                        >
+                          View Profile
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Pending verification requests */}
             <div className="border border-border bg-card">
               <div className="px-5 py-3 border-b border-border flex items-center gap-2">
                 <Clock className="h-4 w-4 text-amber-500" />
@@ -1834,15 +1908,17 @@ function AdminDashboardInner() {
             <DialogHeader>
               <DialogTitle>Edit User</DialogTitle>
               <DialogDescription>
-                Editing {editTarget?.name} ({editTarget?.role})
+                Editing {editTarget?.role === "company" && editTarget?.companyName ? editTarget.companyName : editTarget?.name} ({editTarget?.role})
               </DialogDescription>
             </DialogHeader>
             {editTarget && (
               <div className="space-y-3 py-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Name</Label>
-                  <Input value={editFields.name || ""} onChange={(e) => setEditFields((f) => ({ ...f, name: e.target.value }))} className="h-9" />
-                </div>
+                {editTarget.role !== "company" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Name</Label>
+                    <Input value={editFields.name || ""} onChange={(e) => setEditFields((f) => ({ ...f, name: e.target.value }))} className="h-9" />
+                  </div>
+                )}
                 <div className="space-y-1">
                   <Label className="text-xs">Email</Label>
                   <Input value={editFields.email || ""} onChange={(e) => setEditFields((f) => ({ ...f, email: e.target.value }))} className="h-9" />
