@@ -530,33 +530,48 @@ export function useCompanyDriverMatches(
 
       const candidateMap = new Map<string, Record<string, unknown>>();
 
-      const [appsResult, leadsResult] = await Promise.all([
+      // Batch fetches to avoid URL-too-long errors (PostgREST 414/400)
+      const BATCH = 200;
+      const fetchBatched = async (
+        table: string,
+        select: string,
+        ids: string[],
+      ) => {
+        const all: Record<string, unknown>[] = [];
+        for (let i = 0; i < ids.length; i += BATCH) {
+          const chunk = ids.slice(i, i + BATCH);
+          const { data, error } = await supabase
+            .from(table)
+            .select(select)
+            .in("id", chunk);
+          if (error) throw new Error(error.message || `Failed to load ${table}`);
+          if (data) all.push(...(data as Record<string, unknown>[]));
+        }
+        return all;
+      };
+
+      const [appsData, leadsData] = await Promise.all([
         appIds.length > 0
-          ? supabase
-              .from("applications")
-              .select(
-                "id, first_name, last_name, phone, email, license_state, years_exp, driver_type, license_class",
-              )
-              .in("id", appIds)
-          : Promise.resolve({ data: [] }),
+          ? fetchBatched(
+              "applications",
+              "id, first_name, last_name, phone, email, license_state, years_exp, driver_type, license_class",
+              appIds as string[],
+            )
+          : Promise.resolve([]),
         leadIds.length > 0
-          ? supabase
-              .from("leads")
-              .select("id, full_name, phone, email, state, years_exp, is_owner_op")
-              .in("id", leadIds)
-          : Promise.resolve({ data: [] }),
+          ? fetchBatched(
+              "leads",
+              "id, full_name, phone, email, state, years_exp, is_owner_op",
+              leadIds as string[],
+            )
+          : Promise.resolve([]),
       ]);
 
-      const appsError = (appsResult as { error?: { message?: string } | null }).error;
-      if (appsError) throw new Error(appsError.message || "Failed to load application candidates");
-      const leadsError = (leadsResult as { error?: { message?: string } | null }).error;
-      if (leadsError) throw new Error(leadsError.message || "Failed to load lead candidates");
-
-      for (const row of appsResult.data ?? []) {
-        candidateMap.set(row.id, row as Record<string, unknown>);
+      for (const row of appsData) {
+        candidateMap.set((row as Record<string, unknown>).id as string, row);
       }
-      for (const row of leadsResult.data ?? []) {
-        candidateMap.set(row.id, row as Record<string, unknown>);
+      for (const row of leadsData) {
+        candidateMap.set((row as Record<string, unknown>).id as string, row);
       }
 
       const allMatches = (scores as Record<string, unknown>[]).map((row) =>
