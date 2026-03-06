@@ -83,7 +83,7 @@ const Companies = () => {
     setPage(0);
   };
 
-  // Filter companies by state, verified, and search query
+  // Filter companies by state, verified, and search query — verified first
   const filtered = companies.filter((c) => {
     // Hide companies that haven't set up their profile yet
     if (!c.company_name || !c.company_name.trim()) return false;
@@ -96,6 +96,11 @@ const Companies = () => {
       if (!matchesName && !matchesAddress) return false;
     }
     return true;
+  }).sort((a, b) => {
+    // Verified companies always show first
+    if (a.is_verified && !b.is_verified) return -1;
+    if (!a.is_verified && b.is_verified) return 1;
+    return (a.company_name ?? "").localeCompare(b.company_name ?? "");
   });
 
   return (

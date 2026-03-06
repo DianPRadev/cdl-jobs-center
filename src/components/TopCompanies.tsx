@@ -1,16 +1,26 @@
 import { motion } from "framer-motion";
-import { Star, BadgeCheck, ArrowRight } from "lucide-react";
+import { Star, BadgeCheck, ArrowRight, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-
-const companies = [
-  { name: "GI Super Service", rating: 5, verified: true },
-  { name: "United Global Carrier", rating: 5, verified: true },
-  { name: "PKD Express", rating: 5, verified: true },
-  { name: "AN Enterprise Inc", rating: 5, verified: true },
-];
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 
 const TopCompanies = () => {
+  const { data: companies = [] } = useQuery({
+    queryKey: ["top-companies"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("company_profiles")
+        .select("id, company_name, logo_url, is_verified")
+        .eq("is_verified", true)
+        .order("company_name");
+      if (error) throw error;
+      return (data ?? []).filter((c) => c.company_name?.trim());
+    },
+  });
+
+  if (companies.length === 0) return null;
+
   return (
     <section className="py-24 bg-background">
       <div className="container mx-auto">
@@ -35,33 +45,39 @@ const TopCompanies = () => {
         </motion.div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {companies.map((company, i) => (
+          {companies.slice(0, 8).map((company, i) => (
             <motion.div
-              key={company.name}
+              key={company.id}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}
             >
               <Link
-                to="/companies"
+                to={`/companies/${company.id}`}
                 className="glass rounded-2xl p-6 block hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 group text-center sm:text-left"
               >
-                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-cdl-amber/20 flex items-center justify-center mb-4 text-2xl font-display font-bold text-primary mx-auto sm:mx-0">
-                  {company.name.charAt(0)}
-                </div>
-                <h3 className="font-display font-semibold text-lg mb-2">{company.name}</h3>
+                {company.logo_url ? (
+                  <img
+                    src={company.logo_url}
+                    alt={company.company_name}
+                    className="h-16 w-16 rounded-2xl object-cover mb-4 mx-auto sm:mx-0"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-cdl-amber/20 flex items-center justify-center mb-4 text-2xl font-display font-bold text-primary mx-auto sm:mx-0">
+                    {company.company_name?.charAt(0) || <Building2 className="h-8 w-8" />}
+                  </div>
+                )}
+                <h3 className="font-display font-semibold text-lg mb-2">{company.company_name}</h3>
                 <div className="flex items-center justify-center sm:justify-start gap-1 mb-3">
-                  {Array.from({ length: company.rating }).map((_, j) => (
+                  {Array.from({ length: 5 }).map((_, j) => (
                     <Star key={j} className="h-4 w-4 fill-cdl-amber text-cdl-amber" />
                   ))}
                 </div>
-                {company.verified && (
-                  <div className="flex items-center justify-center sm:justify-start gap-1.5 text-sm text-primary">
-                    <BadgeCheck className="h-4 w-4" />
-                    Verified Company
-                  </div>
-                )}
+                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-sm text-primary">
+                  <BadgeCheck className="h-4 w-4" />
+                  Verified Company
+                </div>
               </Link>
             </motion.div>
           ))}
