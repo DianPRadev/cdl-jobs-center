@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -23,11 +23,15 @@ import {
   pointerWithin,
   useDraggable,
   useDroppable,
+  PointerSensor,
+  useSensor,
+  useSensors,
 } from "@dnd-kit/core";
 import { ChatPanel } from "@/components/ChatPanel";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { useUnreadCount } from "@/hooks/useMessages";
 import { useLeads, useUpdateLeadStatus, useSyncLeads, useAutoSyncLeads } from "@/hooks/useLeads";
+import { usePipelineLeads, useAddToPipeline, useUpdatePipelineStage, useRemoveFromPipeline } from "@/hooks/usePipelineLeads";
 import { useSubscription, useCancelSubscription, useIncrementLeadsUsed, PLANS, type Plan } from "@/hooks/useSubscription";
 import { useCompanyDriverMatches, useMatchingRollout, useCompanyFeedbackMap, useRecordCompanyMatchFeedback, useTrackCompanyMatchEvent, useLeadMatchScores, type CompanyFeedback, type RankTier } from "@/hooks/useMatchScores";
 import {
@@ -58,6 +62,15 @@ const TEAM_OPTIONS = ["Solo", "Team", "Both"];
 const JOB_STATUSES = ["Draft", "Active", "Paused", "Closed"] as const;
 
 type PipelineStage = "New" | "Reviewing" | "Interview" | "Hired" | "Rejected";
+
+interface PipelineItem {
+  id: string;
+  kind: "application" | "lead";
+  name: string;
+  subtitle: string;
+  detail: string;
+  stage: PipelineStage;
+}
 type SaveStatus = "idle" | "saving" | "saved";
 
 type CompanyProfileForm = {
@@ -254,18 +267,18 @@ const AppCard = ({
 };
 
 // ── Pipeline draggable card ───────────────────────────────────────────────────
-const PipelineCard = ({
-  app,
-  stage,
+function PipelineCardInner({
+  item,
   onStageChange,
+  onRemove,
   isDragOverlay = false,
 }: {
-  app: ReceivedApplication;
-  stage: PipelineStage;
-  onStageChange: (s: PipelineStage) => void;
+  item: PipelineItem;
+  onStageChange: (itemId: string, s: PipelineStage) => void;
+  onRemove?: (itemId: string) => void;
   isDragOverlay?: boolean;
-}) => {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: app.id });
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: item.id });
   return (
     <div
       ref={isDragOverlay ? undefined : setNodeRef}
@@ -277,59 +290,63 @@ const PipelineCard = ({
     >
       <div className="flex items-start gap-1.5">
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-foreground leading-tight">
-            {app.firstName} {app.lastName}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {app.driverType || "Driver"}{app.yearsExp ? ` · ${app.yearsExp} exp` : ""}
-          </p>
-          {app.submittedAt && (
-            <p className="text-xs text-muted-foreground">
-              Applied {formatDate(app.submittedAt)}
-            </p>
-          )}
-          {app.availableDate && (
-            <p className="text-xs text-muted-foreground">
-              Available {formatDate(app.availableDate)}
-            </p>
-          )}
+          <div className="flex items-center gap-1.5">
+            <p className="font-semibold text-sm text-foreground leading-tight">{item.name}</p>
+            <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+              item.kind === "lead"
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+            }`}>
+              {item.kind === "lead" ? "Lead" : "Applicant"}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">{item.subtitle}</p>
+          {item.detail && <p className="text-xs text-muted-foreground">{item.detail}</p>}
         </div>
       </div>
       {!isDragOverlay && (
-        <Select value={stage} onValueChange={(v) => onStageChange(v as PipelineStage)}>
-          <SelectTrigger className="h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(["New", "Reviewing", "Interview", "Hired", "Rejected"] as PipelineStage[]).map((s) => (
-              <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-1">
+          <Select value={item.stage} onValueChange={(v) => onStageChange(item.id, v as PipelineStage)}>
+            <SelectTrigger className="h-7 text-xs flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(["New", "Reviewing", "Interview", "Hired", "Rejected"] as PipelineStage[]).map((s) => (
+                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {onRemove && (
+            <button onClick={() => onRemove(item.id)} className="text-muted-foreground hover:text-red-500 text-xs px-1" title="Remove from pipeline">✕</button>
+          )}
+        </div>
       )}
     </div>
   );
-};
+}
+const PipelineCard = memo(PipelineCardInner);
 
 // ── Pipeline droppable column ─────────────────────────────────────────────────
-const PipelineColumn = ({
+function PipelineColumnInner({
   label,
   headerClass,
-  apps,
+  items,
   onStageChange,
+  onRemove,
 }: {
   label: PipelineStage;
   headerClass: string;
-  apps: ReceivedApplication[];
-  onStageChange: (appId: string, s: PipelineStage) => void;
-}) => {
+  items: PipelineItem[];
+  onStageChange: (itemId: string, s: PipelineStage) => void;
+  onRemove?: (itemId: string) => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: label });
   return (
     <div className="flex-1" style={{ minWidth: "200px" }}>
       <div className={`border ${headerClass} px-3 py-2 flex items-center justify-between mb-2`}>
         <span className="font-semibold text-sm">{label}</span>
         <span className="text-xs bg-foreground/10 dark:bg-white/10 px-1.5 py-0.5 rounded-full font-medium">
-          {apps.length}
+          {items.length}
         </span>
       </div>
       <div
@@ -338,26 +355,135 @@ const PipelineColumn = ({
           isOver ? "bg-primary/5 ring-1 ring-primary/30" : ""
         }`}
       >
-        {apps.length === 0 ? (
+        {items.length === 0 ? (
           <div className={`border border-dashed p-4 text-center text-xs text-muted-foreground transition-colors ${
             isOver ? "border-primary/50 text-primary" : "border-border"
           }`}>
             {isOver ? "Drop here" : "Empty"}
           </div>
         ) : (
-          apps.map((app) => (
+          items.map((item) => (
             <PipelineCard
-              key={app.id}
-              app={app}
-              stage={app.pipeline_stage}
-              onStageChange={(s) => onStageChange(app.id, s)}
+              key={item.id}
+              item={item}
+              onStageChange={onStageChange}
+              onRemove={item.kind === "lead" ? onRemove : undefined}
             />
           ))
         )}
       </div>
     </div>
   );
-};
+}
+const PipelineColumn = memo(PipelineColumnInner);
+
+// ── Pipeline board (isolated so drag state doesn't re-render the whole dashboard) ──
+function PipelineBoard({
+  items,
+  onStageChange,
+  onRemove,
+  onClearApps,
+  hasApps,
+}: {
+  items: PipelineItem[];
+  onStageChange: (itemId: string, stage: PipelineStage) => void;
+  onRemove: (itemId: string) => void;
+  onClearApps: () => void;
+  hasApps: boolean;
+}) {
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+
+  // Fix 1: sensor with 8px activation distance — prevents accidental drags & initial lag
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  // Fix 4: memoize per-stage arrays so PipelineColumn memo() actually works
+  const stageMap = useMemo(() => {
+    const map: Record<string, PipelineItem[]> = {};
+    for (const { label } of PIPELINE_STAGES) {
+      map[label] = items.filter((item) => item.stage === label);
+    }
+    return map;
+  }, [items]);
+
+  // Fix 3: stable callbacks
+  const handleDragStart = useCallback((e: { active: { id: string | number } }) => {
+    setDragActiveId(e.active.id as string);
+  }, []);
+
+  const handleDragEnd = useCallback((e: { active: { id: string | number }; over: { id: string | number } | null }) => {
+    setDragActiveId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const targetStage = over.id as PipelineStage;
+    if (PIPELINE_STAGES.some((s) => s.label === targetStage)) {
+      onStageChange(active.id as string, targetStage);
+    }
+  }, [onStageChange]);
+
+  const handleDragCancel = useCallback(() => setDragActiveId(null), []);
+
+  const activeItem = dragActiveId ? items.find((i) => i.id === dragActiveId) : null;
+
+  return (
+    <div>
+      <div className="flex items-start justify-between mb-5 gap-3">
+        <div>
+          <h2 className="font-display font-semibold text-base">Recruitment Pipeline</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Drag cards between stages or use the dropdown. Add leads from the Leads tab.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {hasApps && (
+            <button onClick={onClearApps} className="text-xs text-muted-foreground hover:text-red-500 transition-colors">
+              Clear all
+            </button>
+          )}
+        </div>
+      </div>
+
+      {items.length === 0 && (
+        <div className="border border-border bg-card px-5 py-4 text-center text-muted-foreground text-sm mb-4">
+          <p>Pipeline is empty. Add leads from the Leads tab or wait for driver applications.</p>
+        </div>
+      )}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="overflow-x-auto pb-4">
+          <div className="flex gap-3" style={{ minWidth: `${PIPELINE_STAGES.length * 210}px` }}>
+            {PIPELINE_STAGES.map(({ label, headerClass }) => (
+              <PipelineColumn
+                key={label}
+                label={label}
+                headerClass={headerClass}
+                items={stageMap[label]}
+                onStageChange={onStageChange}
+                onRemove={onRemove}
+              />
+            ))}
+          </div>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeItem ? (
+            <PipelineCard
+              item={activeItem}
+              onStageChange={() => {}}
+              isDragOverlay
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}
 
 // ── AI Matches content (extracted so hook is only called when tab is active) ──
 const AI_MATCH_PAGE_SIZE = 10;
@@ -632,17 +758,39 @@ const AiMatchesContent = ({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {m.candidateSource === "application" ? (
-                    <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("applications")}>
-                      View
-                    </Button>
+                    <>
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("applications")}>
+                        View
+                      </Button>
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("messages")}>
+                        <MessageSquare className="h-3 w-3 mr-1" /> Message
+                      </Button>
+                    </>
                   ) : (
-                    <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("leads")}>
-                      View
-                    </Button>
+                    <>
+                      <Button variant="outline" size="sm" className="text-xs" onClick={(e) => { e.stopPropagation(); setExpandedCard(isExpanded ? null : cardKey); }}>
+                        View
+                      </Button>
+                      {(m.candidatePhone || m.candidateEmail) && (
+                        <div className="flex items-center gap-1.5">
+                          {m.candidatePhone && (
+                            <Button variant="outline" size="sm" className="text-xs" asChild>
+                              <a href={`tel:${m.candidatePhone}`}>
+                                <PhoneIcon className="h-3 w-3 mr-1" /> Call
+                              </a>
+                            </Button>
+                          )}
+                          {m.candidateEmail && (
+                            <Button variant="outline" size="sm" className="text-xs" asChild>
+                              <a href={`mailto:${m.candidateEmail}`}>
+                                <MailIcon className="h-3 w-3 mr-1" /> Email
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
-                  <Button variant="outline" size="sm" className="text-xs" onClick={() => switchTab("messages")}>
-                    <MessageSquare className="h-3 w-3 mr-1" /> Message
-                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -657,6 +805,21 @@ const AiMatchesContent = ({
               {/* Expanded details */}
               {isExpanded && (
                 <div className="mt-4 pt-4 border-t border-border space-y-4">
+                  {/* Contact info for leads */}
+                  {m.candidateSource === "lead" && (m.candidatePhone || m.candidateEmail) && (
+                    <div className="flex flex-wrap items-center gap-4 text-sm">
+                      {m.candidatePhone && (
+                        <a href={`tel:${m.candidatePhone}`} className="flex items-center gap-1.5 text-primary hover:underline">
+                          <PhoneIcon className="h-3.5 w-3.5" /> {m.candidatePhone}
+                        </a>
+                      )}
+                      {m.candidateEmail && (
+                        <a href={`mailto:${m.candidateEmail}`} className="flex items-center gap-1.5 text-primary hover:underline">
+                          <MailIcon className="h-3.5 w-3.5" /> {m.candidateEmail}
+                        </a>
+                      )}
+                    </div>
+                  )}
                   {/* Score breakdown */}
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
@@ -770,6 +933,7 @@ const Dashboard = () => {
 
 // Inner component (only renders after auth is resolved and user is a company)
 const DashboardInner = ({ user }: { user: AuthUser }) => {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { jobs, addJob, updateJob, removeJob } = useJobs(user!.id);
   const { data: unreadMsgCount = 0 } = useUnreadCount(user!.id, "company");
@@ -783,6 +947,11 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const updateLeadStatus = useUpdateLeadStatus();
   const syncLeads = useSyncLeads();
   useAutoSyncLeads();
+  const { data: pipelineLeads = [] } = usePipelineLeads(user!.id);
+  const addToPipeline = useAddToPipeline();
+  const updatePipelineStage = useUpdatePipelineStage();
+  const removeFromPipeline = useRemoveFromPipeline();
+  const pipelineLeadIds = new Set(pipelineLeads.map((pl) => pl.leadId));
   const { data: subscription } = useSubscription(user!.id);
   const cancelSubscription = useCancelSubscription();
   const incrementLeadsUsed = useIncrementLeadsUsed();
@@ -881,7 +1050,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  // dragActiveId moved into PipelineBoard component
   const [savingJob, setSavingJob] = useState(false);
   const [aiJobFilter, setAiJobFilter] = useState<string>("all");
   const [aiSourceFilter, setAiSourceFilter] = useState<string>("all");
@@ -1381,7 +1550,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
             })()}
           </button>
           <button className={tabClass("pipeline")} onClick={() => switchTab("pipeline")} role="tab" aria-selected={activeTab === "pipeline"}>
-            Pipeline ({applications.length})
+            Pipeline ({applications.length + pipelineLeads.length})
           </button>
           <button className={tabClass("ai-matches")} onClick={() => switchTab("ai-matches")} role="tab" aria-selected={activeTab === "ai-matches"}>
             <span className="flex items-center gap-1.5">
@@ -1620,93 +1789,56 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
         )}
 
         {/* ── Tab: Pipeline ──────────────────────────────────────────────────── */}
-        {activeTab === "pipeline" && (
-          <div>
-            <div className="flex items-start justify-between mb-5 gap-3">
-              <div>
-                <h2 className="font-display font-semibold text-base">Recruitment Pipeline</h2>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Move applicants through hiring stages using the dropdown on each card.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {applications.length > 0 && (
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm("Are you sure you want to clear ALL applications? This cannot be undone.")) return;
-                      const { error } = await supabase
-                        .from("applications")
-                        .delete()
-                        .eq("company_id", user!.id);
-                      if (!error) {
-                        qc.setQueryData(appsKey, []);
-                        qc.invalidateQueries({ queryKey: appsKey });
-                        toast.success("All applications cleared.");
-                      } else {
-                        toast.error("Failed to clear applications.");
-                      }
-                    }}
-                    className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-            </div>
+        {activeTab === "pipeline" && (() => {
+          const appItems: PipelineItem[] = applications.map((app) => ({
+            id: app.id,
+            kind: "application" as const,
+            name: `${app.firstName} ${app.lastName}`,
+            subtitle: `${app.driverType || "Driver"}${app.yearsExp ? ` · ${app.yearsExp} exp` : ""}`,
+            detail: app.submittedAt ? `Applied ${formatDate(app.submittedAt)}` : "",
+            stage: app.pipeline_stage,
+          }));
+          const leadItems: PipelineItem[] = pipelineLeads.map((pl) => ({
+            id: pl.id,
+            kind: "lead" as const,
+            name: pl.fullName,
+            subtitle: `${pl.isOwnerOp ? "Owner Op" : "Company Driver"}${pl.yearsExp ? ` · ${pl.yearsExp} exp` : ""}`,
+            detail: pl.state ? `📍 ${pl.state}` : "",
+            stage: pl.stage,
+          }));
+          const allItems = [...appItems, ...leadItems];
 
-            {applications.length === 0 && (
-              <div className="border border-border bg-card px-5 py-4 text-center text-muted-foreground text-sm mb-4">
-                <p>No applications received yet. New applicants will appear in the pipeline below.</p>
-              </div>
-            )}
-              <DndContext
-                collisionDetection={pointerWithin}
-                onDragStart={(e) => setDragActiveId(e.active.id as string)}
-                onDragEnd={(e) => {
-                  setDragActiveId(null);
-                  const { active, over } = e;
-                  if (!over) return;
-                  const targetStage = over.id as PipelineStage;
-                  if (PIPELINE_STAGES.some((s) => s.label === targetStage)) {
-                    updateAppStage(active.id as string, targetStage);
-                  }
-                }}
-                onDragCancel={() => setDragActiveId(null)}
-              >
-                <div className="overflow-x-auto pb-4">
-                  <div className="flex gap-3" style={{ minWidth: `${PIPELINE_STAGES.length * 210}px` }}>
-                    {PIPELINE_STAGES.map(({ label, headerClass }) => {
-                      const stageApps = applications.filter((app) => app.pipeline_stage === label);
-                      return (
-                        <PipelineColumn
-                          key={label}
-                          label={label}
-                          headerClass={headerClass}
-                          apps={stageApps}
-                          onStageChange={updateAppStage}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
+          const handleStageChange = (itemId: string, stage: PipelineStage) => {
+            if (applications.some((a) => a.id === itemId)) {
+              updateAppStage(itemId, stage);
+            } else {
+              updatePipelineStage.mutate({ id: itemId, stage });
+            }
+          };
 
-                <DragOverlay dropAnimation={null}>
-                  {dragActiveId ? (() => {
-                    const activeApp = applications.find((a) => a.id === dragActiveId);
-                    if (!activeApp) return null;
-                    return (
-                      <PipelineCard
-                        app={activeApp}
-                        stage={activeApp.pipeline_stage}
-                        onStageChange={() => {}}
-                        isDragOverlay
-                      />
-                    );
-                  })() : null}
-                </DragOverlay>
-              </DndContext>
-          </div>
-        )}
+          return (
+            <PipelineBoard
+              items={allItems}
+              onStageChange={handleStageChange}
+              onRemove={(id) => removeFromPipeline.mutate({ id })}
+              hasApps={applications.length > 0}
+              onClearApps={async () => {
+                if (!window.confirm("Are you sure you want to clear ALL applications? This cannot be undone.")) return;
+                const { error } = await supabase
+                  .from("applications")
+                  .delete()
+                  .eq("company_id", user!.id);
+                if (!error) {
+                  qc.setQueryData(appsKey, []);
+                  qc.invalidateQueries({ queryKey: appsKey });
+                  toast.success("All applications cleared.");
+                } else {
+                  toast.error("Failed to clear applications.");
+                }
+              }}
+            />
+          );
+        })()}
 
         {/* ── Tab: Profile Settings ──────────────────────────────────────────── */}
         {activeTab === "profile" && (
@@ -2158,6 +2290,18 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                                   </Button>
                                 )}
                               </>
+                            )}
+                            {!pipelineLeadIds.has(lead.id) ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-7 px-3"
+                                onClick={() => addToPipeline.mutate({ companyId: user!.id, leadId: lead.id })}
+                              >
+                                + Pipeline
+                              </Button>
+                            ) : (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium px-1">In Pipeline</span>
                             )}
                             {lead.status !== "dismissed" && (
                               <Button

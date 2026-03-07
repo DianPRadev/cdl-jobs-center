@@ -8,11 +8,11 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-/** Map plan name → lead limit */
+/** Map plan name → lead limit (must match frontend PLANS in useSubscription.ts) */
 const PLAN_LEADS: Record<string, number> = {
-  free: 3,
-  starter: 25,
-  growth: 100,
+  free: 5,
+  starter: 40,
+  growth: 150,
   unlimited: 9999,
 };
 
@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
           {
             company_id: userId,
             plan,
-            lead_limit: PLAN_LEADS[plan] ?? 3,
+            lead_limit: PLAN_LEADS[plan] ?? 5,
             leads_used: 0,
             stripe_customer_id: stripeCustomerId,
             stripe_subscription_id: stripeSubscriptionId,
@@ -138,20 +138,40 @@ Deno.serve(async (req) => {
         const priceId = sub.items?.data?.[0]?.price?.id;
         const plan = (priceId && PRICE_TO_PLAN[priceId]) || sub.metadata?.plan || "free";
 
-        const { error } = await supabase
+        // Check if billing period changed → reset leads_used
+        const newPeriodStart = new Date(
+          sub.current_period_start * 1000
+        ).toISOString();
+
+        const { data: existingSub } = await supabase
           .from("subscriptions")
-          .update({
+          .select("current_period_start")
+          .eq("stripe_subscription_id", sub.id)
+          .single();
+
+        const periodChanged =
+          existingSub && existingSub.current_period_start !== newPeriodStart;
+
+        // deno-lint-ignore no-explicit-any
+        const updatePayload: Record<string, any> = {
             plan,
-            lead_limit: PLAN_LEADS[plan] ?? 3,
+            lead_limit: PLAN_LEADS[plan] ?? 5,
             status: STATUS_MAP[sub.status] ?? "active",
-            current_period_start: new Date(
-              sub.current_period_start * 1000
-            ).toISOString(),
+            current_period_start: newPeriodStart,
             current_period_end: new Date(
               sub.current_period_end * 1000
             ).toISOString(),
             updated_at: new Date().toISOString(),
-          })
+        };
+
+        if (periodChanged) {
+          updatePayload.leads_used = 0;
+          console.log(`Billing period renewed for subId=${sub.id}, resetting leads_used`);
+        }
+
+        const { error } = await supabase
+          .from("subscriptions")
+          .update(updatePayload)
           .eq("stripe_subscription_id", sub.id);
 
         if (error) {
@@ -192,7 +212,7 @@ Deno.serve(async (req) => {
           .from("subscriptions")
           .update({
             plan: "free",
-            lead_limit: 5,
+            lead_limit: PLAN_LEADS["free"],
             status: "canceled",
             stripe_subscription_id: null,
             current_period_end: null,

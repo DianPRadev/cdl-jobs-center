@@ -492,7 +492,7 @@ export function useCompanyDriverMatches(
 
       // Build CompanyDriverMatch[] from score rows (fetches candidate details)
       const processScores = async (scores: Record<string, unknown>[]): Promise<CompanyDriverMatch[]> => {
-        let filtered = opts.source
+        const filtered = opts.source
           ? scores.filter((s) => s.candidate_source === opts.source)
           : scores;
         if (filtered.length === 0) return [];

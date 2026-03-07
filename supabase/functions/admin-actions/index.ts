@@ -76,11 +76,10 @@ Deno.serve(async (req) => {
       const newUserId = authData.user.id;
 
       // 2. The handle_new_user trigger creates profiles row.
-      //    Update it with the correct role + name.
+      //    Use upsert to avoid race condition if trigger hasn't fired yet.
       await supabase
         .from("profiles")
-        .update({ role, name: name || email })
-        .eq("id", newUserId);
+        .upsert({ id: newUserId, role, name: name || email }, { onConflict: "id" });
 
       // 3. Create the extended profile row
       const pf = profile_fields || {};
@@ -148,7 +147,10 @@ Deno.serve(async (req) => {
           user_id,
           { ban_duration: "876000h" } // ~100 years
         );
-        if (banErr) console.error("Auth ban failed:", banErr.message);
+        if (banErr) {
+          console.error("Auth ban failed:", banErr.message);
+          return json({ error: `Profile banned but auth ban failed: ${banErr.message}` }, 500);
+        }
 
         return json({ success: true, action: "banned", user: targetProfile.name });
       }
@@ -164,33 +166,48 @@ Deno.serve(async (req) => {
           user_id,
           { ban_duration: "none" }
         );
-        if (unbanErr) console.error("Auth unban failed:", unbanErr.message);
+        if (unbanErr) {
+          console.error("Auth unban failed:", unbanErr.message);
+          return json({ error: `Profile unbanned but auth unban failed: ${unbanErr.message}` }, 500);
+        }
 
         return json({ success: true, action: "unbanned", user: targetProfile.name });
       }
 
       case "delete": {
-        // Delete related data first — must clear all FK references before profiles
-        await supabase.from("notifications").delete().eq("user_id", user_id);
-        await supabase.from("saved_jobs").delete().eq("driver_id", user_id);
-        await supabase.from("ai_match_feedback").delete().eq("driver_id", user_id);
-        await supabase.from("ai_match_results").delete().eq("driver_id", user_id);
-        await supabase.from("ai_match_profiles").delete().eq("driver_id", user_id);
-        await supabase.from("applications").delete().eq("driver_id", user_id);
-        await supabase.from("applications").delete().eq("company_id", user_id);
-        await supabase.from("leads").delete().eq("company_id", user_id);
-        await supabase.from("verification_requests").delete().eq("company_id", user_id);
-        await supabase.from("jobs").delete().eq("company_id", user_id);
-        await supabase.from("subscriptions").delete().eq("company_id", user_id);
-        await supabase.from("driver_profiles").delete().eq("id", user_id);
-        await supabase.from("company_profiles").delete().eq("id", user_id);
-        await supabase.from("profiles").delete().eq("id", user_id);
+        // Delete related data — collect errors but continue cascade
+        const cascadeErrors: string[] = [];
+        for (const del of [
+          supabase.from("notifications").delete().eq("user_id", user_id),
+          supabase.from("saved_jobs").delete().eq("driver_id", user_id),
+          supabase.from("ai_match_feedback").delete().eq("driver_id", user_id),
+          supabase.from("ai_match_results").delete().eq("driver_id", user_id),
+          supabase.from("ai_match_profiles").delete().eq("driver_id", user_id),
+          supabase.from("applications").delete().eq("driver_id", user_id),
+          supabase.from("applications").delete().eq("company_id", user_id),
+          supabase.from("leads").delete().eq("company_id", user_id),
+          supabase.from("verification_requests").delete().eq("company_id", user_id),
+          supabase.from("jobs").delete().eq("company_id", user_id),
+          supabase.from("subscriptions").delete().eq("company_id", user_id),
+          supabase.from("driver_profiles").delete().eq("id", user_id),
+          supabase.from("company_profiles").delete().eq("id", user_id),
+          supabase.from("profiles").delete().eq("id", user_id),
+        ]) {
+          const { error: delCascadeErr } = await del;
+          if (delCascadeErr) cascadeErrors.push(delCascadeErr.message);
+        }
 
         // Delete auth user last
         const { error: delErr } = await supabase.auth.admin.deleteUser(user_id);
-        if (delErr) console.error("Auth delete failed:", delErr.message);
+        if (delErr) {
+          console.error("Auth delete failed:", delErr.message);
+          return json({ error: `Auth delete failed: ${delErr.message}`, cascade_errors: cascadeErrors }, 500);
+        }
+        if (cascadeErrors.length > 0) {
+          console.error("Cascade delete warnings:", cascadeErrors);
+        }
 
-        return json({ success: true, action: "deleted", user: targetProfile.name });
+        return json({ success: true, action: "deleted", user: targetProfile.name, cascade_warnings: cascadeErrors.length > 0 ? cascadeErrors : undefined });
       }
 
       case "edit_user": {
@@ -213,7 +230,9 @@ Deno.serve(async (req) => {
             await supabase.auth.admin.updateUserById(user_id, {
               email: fields.email,
             });
-          if (emailErr) console.error("Email update failed:", emailErr.message);
+          if (emailErr) {
+            return json({ error: `Email update failed: ${emailErr.message}` }, 500);
+          }
           // Also update profiles.email if it exists
           await supabase
             .from("profiles")
@@ -223,6 +242,9 @@ Deno.serve(async (req) => {
 
         // Update auth password if provided
         if (fields.password) {
+          if (typeof fields.password !== "string" || fields.password.length < 8) {
+            return json({ error: "Password must be at least 8 characters" }, 400);
+          }
           const { error: pwErr } =
             await supabase.auth.admin.updateUserById(user_id, {
               password: fields.password,

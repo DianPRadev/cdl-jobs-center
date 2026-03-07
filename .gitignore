@@ -32,11 +32,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Playwright (local smoke tests)
-e2e/
+# Playwright artifacts (not source)
 test-results/
 playwright-report/
-playwright.config.ts
 
 # Sensitive / local-only
 tmp-storage.json

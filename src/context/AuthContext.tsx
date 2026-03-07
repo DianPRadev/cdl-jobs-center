@@ -112,11 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 id: userId,
                 company_name: meta.company_name || meta.name || "",
                 phone: meta.company_phone || meta.phone || "",
-                address: meta.company_address || "",
+                address: meta.company_address || meta.address || "",
                 email: meta.company_email || userEmail,
                 contact_name: meta.contact_name || "",
                 contact_title: meta.contact_title || "",
                 company_goal: meta.company_goal || "",
+                website: meta.website || "",
               });
               // Fallback: if new columns don't exist yet, retry with base columns
               if (upsertErr) {
@@ -124,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   id: userId,
                   company_name: meta.company_name || meta.name || "",
                   phone: meta.company_phone || meta.phone || "",
-                  address: meta.company_address || "",
+                  address: meta.company_address || meta.address || "",
                   email: meta.company_email || userEmail,
                 });
               }

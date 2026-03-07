@@ -89,6 +89,7 @@ const Onboarding = () => {
   // Pre-fill contact name from OAuth metadata
   useEffect(() => {
     if (user) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const meta = (user as any).user_metadata ?? {};
       const name = meta.name || meta.full_name || "";
       if (name) {

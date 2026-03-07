@@ -954,9 +954,10 @@ async function processJob(
     }
 
     if (driverRows.length > 0) {
-      await supabase
+      const { error: upsErr } = await supabase
         .from("driver_job_match_scores")
         .upsert(driverRows, { onConflict: "driver_id,job_id" });
+      if (upsErr) throw upsErr;
     }
   }
 
@@ -1021,7 +1022,7 @@ async function processApplication(
 async function processLead(
   supabase: SupabaseClient,
   leadId: string,
-  companyId: string | null,
+  _companyId: string | null,
   embeddingProvider: EmbeddingProvider | null,
 ) {
   const { data: lead } = await supabase
@@ -1034,51 +1035,67 @@ async function processLead(
     return;
   }
 
+  // Purge old scores for this lead (all companies)
   await purgeCompanyCandidateMatches(supabase, "lead", leadId);
 
-  const effectiveCompanyId = (lead.company_id as string | null) ?? companyId;
-  if (!effectiveCompanyId) return;
-
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("company_id", effectiveCompanyId)
-    .eq("status", "Active");
-
   const candidate = extractCandidateFromLead(lead);
-  const behaviorCtx = await getCompanyBehaviorContext(supabase, effectiveCompanyId);
   const candEmb = embeddingProvider
     ? await getOrComputeEmbedding(supabase, embeddingProvider, "lead", leadId, candidate.textBlock)
     : null;
 
-  if (!jobs || jobs.length === 0) {
-    // No jobs — score lead against company profile directly
-    const profileJob = await buildCompanyProfileJob(supabase, effectiveCompanyId);
-    const score = computeCompanyV2Score(candidate, profileJob, candEmb, null, behaviorCtx);
-    if (!score.hidden) {
-      const { error: upsErr } = await supabase.from("company_driver_match_scores").upsert(
-        buildCompanyUpsertRow(effectiveCompanyId, null, "lead", leadId, null, score, embeddingProvider),
-        { onConflict: "company_id,job_id,candidate_source,candidate_id" },
-      );
-      if (upsErr) throw upsErr;
-    }
-    return;
+  // Score this lead for ALL companies (leads are a shared pool)
+  const { data: allActiveJobs } = await supabase
+    .from("jobs")
+    .select("*")
+    .eq("status", "Active");
+
+  const jobsByCompany = new Map<string, typeof allActiveJobs>();
+  for (const j of allActiveJobs ?? []) {
+    const cid = j.company_id as string;
+    if (!jobsByCompany.has(cid)) jobsByCompany.set(cid, []);
+    jobsByCompany.get(cid)!.push(j);
   }
 
-  for (const jobRow of jobs) {
-    const jobFeatures = extractJobFeatures(jobRow);
-    const jobEmb = embeddingProvider
-      ? await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock)
-      : null;
+  // Get ALL company accounts
+  const { data: allCompanies } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("role", "company");
 
-    const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmb, behaviorCtx);
-    if (score.hidden) continue;
+  for (const company of allCompanies ?? []) {
+    const cid = company.id as string;
+    const companyJobs = jobsByCompany.get(cid);
+    const behaviorCtx = await getCompanyBehaviorContext(supabase, cid);
 
-    const { error: upsErr } = await supabase.from("company_driver_match_scores").upsert(
-      buildCompanyUpsertRow(effectiveCompanyId, jobRow.id, "lead", leadId, null, score, embeddingProvider),
-      { onConflict: "company_id,job_id,candidate_source,candidate_id" },
-    );
-    if (upsErr) throw upsErr;
+    if (!companyJobs || companyJobs.length === 0) {
+      // No jobs — score lead against company profile
+      const profileJob = await buildCompanyProfileJob(supabase, cid);
+      const score = computeCompanyV2Score(candidate, profileJob, candEmb, null, behaviorCtx);
+      if (!score.hidden) {
+        const { error: upsErr } = await supabase.from("company_driver_match_scores").upsert(
+          buildCompanyUpsertRow(cid, null, "lead", leadId, null, score, embeddingProvider),
+          { onConflict: "company_id,job_id,candidate_source,candidate_id" },
+        );
+        if (upsErr) throw upsErr;
+      }
+    } else {
+      // Score against each active job
+      for (const jobRow of companyJobs) {
+        const jobFeatures = extractJobFeatures(jobRow);
+        const jobEmb = embeddingProvider
+          ? await getOrComputeEmbedding(supabase, embeddingProvider, "job", jobRow.id, jobFeatures.textBlock)
+          : null;
+
+        const score = computeCompanyV2Score(candidate, jobFeatures, candEmb, jobEmb, behaviorCtx);
+        if (score.hidden) continue;
+
+        const { error: upsErr } = await supabase.from("company_driver_match_scores").upsert(
+          buildCompanyUpsertRow(cid, jobRow.id, "lead", leadId, null, score, embeddingProvider),
+          { onConflict: "company_id,job_id,candidate_source,candidate_id" },
+        );
+        if (upsErr) throw upsErr;
+      }
+    }
   }
 }
 
@@ -1297,8 +1314,8 @@ async function getOrComputeEmbedding(
   try {
     const [embedding] = await provider.embed([text]);
 
-    // Cache it
-    await supabase.from("matching_text_embeddings").upsert(
+    // Cache it (non-critical — log but don't block)
+    const { error: cacheErr } = await supabase.from("matching_text_embeddings").upsert(
       {
         entity_type: entityType,
         entity_id: entityId,
@@ -1311,6 +1328,7 @@ async function getOrComputeEmbedding(
       },
       { onConflict: "entity_type,entity_id" },
     );
+    if (cacheErr) console.error(`Embedding cache upsert failed for ${entityType}/${entityId}:`, cacheErr.message);
 
     return embedding;
   } catch {

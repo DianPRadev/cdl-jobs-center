@@ -360,6 +360,8 @@ const Navbar = () => {
               src={isDark ? "/logo-dark.svg" : "/logo.svg"}
               alt="CDL Jobs Center"
               className="h-16 object-contain"
+              width={190}
+              height={64}
             />
           </Link>
 

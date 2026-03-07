@@ -130,13 +130,32 @@ Deno.serve(async (req) => {
         }
 
         if (batch.length > 0) {
-          await supabase
+          const { error: upsErr } = await supabase
             .from("driver_job_match_scores")
             .upsert(batch, { onConflict: "driver_id,job_id" });
-          driverJobPairs += batch.length;
+          if (upsErr) console.error("driver_job upsert failed:", upsErr.message);
+          else driverJobPairs += batch.length;
         }
       }
     }
+
+    // ── Fetch ALL leads once (shared pool visible to all companies) ──
+    const MAX_PAGES = 100;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allLeads: Record<string, any>[] = [];
+    {
+      const PAGE = 1000;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const { data: batch } = await supabase
+          .from("leads")
+          .select("*")
+          .range(page * PAGE, (page + 1) * PAGE - 1);
+        if (!batch || batch.length === 0) break;
+        allLeads.push(...batch);
+        if (batch.length < PAGE) break;
+      }
+    }
+    console.log(`Fetched ${allLeads.length} total leads for shared-pool matching`);
 
     // ── Phase B: company × candidate scores ──────────────────
 
@@ -158,13 +177,6 @@ Deno.serve(async (req) => {
         // Fetch company's applications (raise default 1000-row limit)
         const { data: apps } = await supabase
           .from("applications")
-          .select("*")
-          .eq("company_id", companyId)
-          .limit(10000);
-
-        // Fetch company's leads (raise default 1000-row limit)
-        const { data: leads } = await supabase
-          .from("leads")
           .select("*")
           .eq("company_id", companyId)
           .limit(10000);
@@ -216,17 +228,18 @@ Deno.serve(async (req) => {
               });
             }
             if (appRows.length > 0) {
-              await supabase
+              const { error: upsErr } = await supabase
                 .from("company_driver_match_scores")
                 .upsert(appRows, { onConflict: "company_id,job_id,candidate_source,candidate_id" });
-              companyDriverPairs += appRows.length;
+              if (upsErr) console.error("company_driver app upsert failed:", upsErr.message);
+              else companyDriverPairs += appRows.length;
             }
           }
 
-          // Score leads
-          if (leads) {
+          // Score leads (all leads — shared pool)
+          if (allLeads.length > 0) {
             const leadRows = [];
-            for (const lead of leads) {
+            for (const lead of allLeads) {
               const candidate = extractCandidateFromLead(lead);
               const result = computeCompanyDriverRulesScore(candidate, jobFeatures);
 
@@ -259,131 +272,111 @@ Deno.serve(async (req) => {
               });
             }
             if (leadRows.length > 0) {
-              await supabase
+              const { error: upsErr } = await supabase
                 .from("company_driver_match_scores")
                 .upsert(leadRows, { onConflict: "company_id,job_id,candidate_source,candidate_id" });
-              companyDriverPairs += leadRows.length;
+              if (upsErr) console.error("company_driver lead upsert failed:", upsErr.message);
+              else companyDriverPairs += leadRows.length;
             }
           }
         }
       }
     }
 
-    // ── Phase C: jobless companies — score leads against company profile ──
+    // ── Phase C: jobless companies — score ALL leads against company profile ──
 
-    if (!timedOut) {
-      // Find companies that have leads but NO active jobs (not already scored above)
+    if (!timedOut && allLeads.length > 0) {
       const companiesWithJobs = jobs ? new Set(jobs.map((j: Record<string, any>) => j.company_id as string)) : new Set<string>();
 
-      // Get distinct company_ids from leads — paginate to bypass max_rows=1000
-      const leadCompanies: Record<string, any>[] = [];
-      {
-        const PAGE = 1000;
-        for (let page = 0; ; page++) {
-          const { data: batch } = await supabase
-            .from("leads")
-            .select("company_id")
-            .not("company_id", "is", null)
-            .range(page * PAGE, (page + 1) * PAGE - 1);
-          if (!batch || batch.length === 0) break;
-          leadCompanies.push(...batch);
-          if (batch.length < PAGE) break;
+      // Find ALL company accounts without active jobs (not just companies that own leads)
+      const { data: allCompanyProfiles } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "company");
+
+      const joblessCompanyIds = (allCompanyProfiles ?? [])
+        .map((p: Record<string, any>) => p.id as string)
+        .filter((cid: string) => !companiesWithJobs.has(cid));
+
+      for (const companyId of joblessCompanyIds) {
+        if (Date.now() - startTime > TIMEOUT_MS) {
+          timedOut = true;
+          break;
         }
-      }
 
-      if (leadCompanies.length > 0) {
-        const joblessCompanyIds = [
-          ...new Set(
-            leadCompanies
-              .map((r: Record<string, any>) => r.company_id as string)
-              .filter((cid: string) => !companiesWithJobs.has(cid)),
-          ),
-        ];
+        // Build synthetic job from company profile
+        const { data: cp } = await supabase
+          .from("company_profiles")
+          .select("company_name, address, about, company_goal")
+          .eq("id", companyId)
+          .maybeSingle();
 
-        for (const companyId of joblessCompanyIds) {
-          if (Date.now() - startTime > TIMEOUT_MS) {
-            timedOut = true;
-            break;
-          }
+        const companyName = cp?.company_name ?? "Company";
+        const address = cp?.address ?? null;
+        const about = cp?.about ?? "";
+        const goal = cp?.company_goal ?? "";
 
-          // Build synthetic job from company profile
-          const { data: cp } = await supabase
-            .from("company_profiles")
-            .select("company_name, address, about, company_goal")
-            .eq("id", companyId)
-            .maybeSingle();
+        const profileJob: JobFeatures = {
+          jobId: `profile-${companyId}`,
+          companyId,
+          title: `${companyName} — General Hiring`,
+          description: [about, goal].filter(Boolean).join(" "),
+          driverType: null,
+          routeType: null,
+          freightType: null,
+          teamDriving: null,
+          location: address,
+          pay: null,
+          status: "Active",
+          textBlock: `${companyName} hiring CDL drivers. ${about} ${goal}`.trim(),
+        };
 
-          const companyName = cp?.company_name ?? "Company";
-          const address = cp?.address ?? null;
-          const about = cp?.about ?? "";
-          const goal = cp?.company_goal ?? "";
+        // Score ALL leads (shared pool) against this company's profile
+        const leadRows = [];
+        for (const lead of allLeads) {
+          const candidate = extractCandidateFromLead(lead);
+          const result = computeCompanyDriverRulesScore(candidate, profileJob);
 
-          const profileJob: JobFeatures = {
-            jobId: `profile-${companyId}`,
-            companyId,
-            title: `${companyName} — General Hiring`,
-            description: [about, goal].filter(Boolean).join(" "),
-            driverType: null,
-            routeType: null,
-            freightType: null,
-            teamDriving: null,
-            location: address,
-            pay: null,
-            status: "Active",
-            textBlock: `${companyName} hiring CDL drivers. ${about} ${goal}`.trim(),
-          };
+          leadRows.push({
+            company_id: companyId,
+            job_id: null,
+            candidate_source: "lead" as const,
+            candidate_id: lead.id,
+            candidate_driver_id: null,
+            overall_score: Math.min(result.overallScore, 100),
+            rules_score: result.rulesScore,
+            semantic_score: result.semanticScore,
+            score_breakdown: result.scoreBreakdown,
+            top_reasons: result.topReasons,
+            cautions: result.cautions,
+            degraded_mode: result.degradedMode,
+            provider: embeddingProvider?.providerName ?? null,
+            model: embeddingProvider?.modelName ?? null,
+            computed_at: new Date().toISOString(),
+            version: 1,
+          });
+        }
+        if (leadRows.length > 0) {
+          // For null job_id rows, delete existing first then insert (can't upsert on nullable column easily)
+          const { error: delErr } = await supabase
+            .from("company_driver_match_scores")
+            .delete()
+            .eq("company_id", companyId)
+            .eq("candidate_source", "lead")
+            .is("job_id", null);
+          if (delErr) console.error("jobless lead delete failed:", delErr.message);
 
-          // Fetch ALL leads for company — paginate to bypass Supabase max_rows=1000
-          const leads: Record<string, any>[] = [];
-          const PAGE = 1000;
-          for (let page = 0; ; page++) {
-            const { data: batch } = await supabase
-              .from("leads")
-              .select("*")
-              .eq("company_id", companyId)
-              .range(page * PAGE, (page + 1) * PAGE - 1);
-            if (!batch || batch.length === 0) break;
-            leads.push(...batch);
-            if (batch.length < PAGE) break;
-          }
-
-          if (leads && leads.length > 0) {
-            const leadRows = [];
-            for (const lead of leads) {
-              const candidate = extractCandidateFromLead(lead);
-              const result = computeCompanyDriverRulesScore(candidate, profileJob);
-
-              leadRows.push({
-                company_id: companyId,
-                job_id: null,
-                candidate_source: "lead" as const,
-                candidate_id: lead.id,
-                candidate_driver_id: null,
-                overall_score: Math.min(result.overallScore, 100),
-                rules_score: result.rulesScore,
-                semantic_score: result.semanticScore,
-                score_breakdown: result.scoreBreakdown,
-                top_reasons: result.topReasons,
-                cautions: result.cautions,
-                degraded_mode: result.degradedMode,
-                provider: embeddingProvider?.providerName ?? null,
-                model: embeddingProvider?.modelName ?? null,
-                computed_at: new Date().toISOString(),
-                version: 1,
-              });
-            }
-            if (leadRows.length > 0) {
-              // For null job_id rows, delete existing first then insert (can't upsert on nullable column easily)
-              await supabase
-                .from("company_driver_match_scores")
-                .delete()
-                .eq("company_id", companyId)
-                .eq("candidate_source", "lead")
-                .is("job_id", null);
-              await supabase
-                .from("company_driver_match_scores")
-                .insert(leadRows);
-              companyDriverPairs += leadRows.length;
+          // Insert in chunks of 500 to avoid payload size limits
+          const CHUNK = 500;
+          for (let i = 0; i < leadRows.length; i += CHUNK) {
+            const chunk = leadRows.slice(i, i + CHUNK);
+            const { error: insErr } = await supabase
+              .from("company_driver_match_scores")
+              .insert(chunk);
+            if (insErr) {
+              console.error(`jobless lead insert chunk ${i}–${i + chunk.length} failed:`, insErr.message);
+            } else {
+              companyDriverPairs += chunk.length;
             }
           }
         }
