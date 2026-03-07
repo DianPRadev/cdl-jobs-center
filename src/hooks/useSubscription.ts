@@ -18,9 +18,9 @@ export interface Subscription {
 
 export const PLANS = {
   free:      { label: "Free",      price: 0,   leads: 5,    priceId: "" },
-  starter:   { label: "Starter",   price: 39,  leads: 40,   priceId: import.meta.env.VITE_STRIPE_PRICE_STARTER ?? "" },
-  growth:    { label: "Growth",    price: 99,  leads: 150,  priceId: import.meta.env.VITE_STRIPE_PRICE_GROWTH ?? "" },
-  unlimited: { label: "Unlimited", price: 249, leads: 9999, priceId: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED ?? "" },
+  starter:   { label: "Starter",   price: 49,  leads: 40,   priceId: import.meta.env.VITE_STRIPE_PRICE_STARTER ?? "" },
+  growth:    { label: "Growth",    price: 149, leads: 150,  priceId: import.meta.env.VITE_STRIPE_PRICE_GROWTH ?? "" },
+  unlimited: { label: "Unlimited", price: 299, leads: 9999, priceId: import.meta.env.VITE_STRIPE_PRICE_UNLIMITED ?? "" },
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
