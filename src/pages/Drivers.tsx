@@ -84,10 +84,10 @@ const Drivers = () => {
   const navigate = useNavigate();
   const isAdmin = user?.role === "admin";
   const isCompany = user?.role === "company";
-  const { data: subscription } = useSubscription(isCompany ? user?.id : undefined);
+  const { data: subscription, isLoading: loadingSub } = useSubscription(isCompany ? user?.id : undefined);
   const hasUnlimited = isAdmin || subscription?.plan === "unlimited";
 
-  const { data: companyProfile } = useQuery({
+  const { data: companyProfile, isLoading: loadingProfile } = useQuery({
     queryKey: ["company-profile-verified", user?.id],
     enabled: !!user?.id && isCompany,
     queryFn: async () => {
@@ -99,6 +99,7 @@ const Drivers = () => {
       return data;
     },
   });
+  const companyDataLoading = isCompany && (loadingSub || loadingProfile);
   const isVerifiedCompany = isCompany && (companyProfile?.is_verified === true) && !companyProfile?.decline_reason;
 
   const [classFilter, setClassFilter] = useState("All");
@@ -255,6 +256,18 @@ const Drivers = () => {
         <Navbar />
         <main className="container mx-auto py-8 max-w-3xl">
           <div className="flex justify-center py-20"><Spinner /></div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (companyDataLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="container mx-auto py-8 max-w-3xl flex justify-center pt-32">
+          <Spinner />
         </main>
         <Footer />
       </div>
