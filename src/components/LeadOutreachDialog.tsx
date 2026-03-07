@@ -27,12 +27,14 @@ const PLANS_WITH_SMS  = new Set<Plan>(["unlimited"]);
 type Channel = "email" | "sms";
 
 export function LeadOutreachDialog({ open, onClose, lead, companyId, plan }: LeadOutreachDialogProps) {
-  const [channel, setChannel] = useState<Channel>("email");
+  // Default to SMS if lead has no email (or email plan not available)
+  const defaultChannel: Channel = lead.email && PLANS_WITH_EMAIL.has(plan) ? "email" : "sms";
+  const [channel, setChannel] = useState<Channel>(defaultChannel);
   const [subject, setSubject] = useState("");
   const [body, setBody]       = useState("");
 
-  const canEmail = PLANS_WITH_EMAIL.has(plan);
-  const canSms   = PLANS_WITH_SMS.has(plan);
+  const canEmail = PLANS_WITH_EMAIL.has(plan) && !!lead.email;
+  const canSms   = PLANS_WITH_SMS.has(plan)   && !!lead.phone;
 
   const { data: messages = [], isLoading: loadingMsgs } = useLeadMessages(
     open ? lead.id : null,
@@ -159,11 +161,13 @@ export function LeadOutreachDialog({ open, onClose, lead, companyId, plan }: Lea
               className="gap-1.5 text-xs"
               onClick={() => setChannel("email")}
               disabled={!canEmail}
-              title={!canEmail ? "Requires Starter plan" : undefined}
+              title={!lead.email ? "No email on file" : !PLANS_WITH_EMAIL.has(plan) ? "Requires Starter plan" : undefined}
             >
               <Mail className="h-3.5 w-3.5" />
               Email
-              {!canEmail && <span className="text-[10px] opacity-60 ml-1">Starter+</span>}
+              {!lead.email
+                ? <span className="text-[10px] opacity-60 ml-1">No email</span>
+                : !PLANS_WITH_EMAIL.has(plan) && <span className="text-[10px] opacity-60 ml-1">Starter+</span>}
             </Button>
             <Button
               size="sm"
@@ -171,11 +175,13 @@ export function LeadOutreachDialog({ open, onClose, lead, companyId, plan }: Lea
               className="gap-1.5 text-xs"
               onClick={() => setChannel("sms")}
               disabled={!canSms}
-              title={!canSms ? "Requires Unlimited plan" : undefined}
+              title={!lead.phone ? "No phone on file" : !PLANS_WITH_SMS.has(plan) ? "Requires Unlimited plan" : undefined}
             >
               <MessageSquare className="h-3.5 w-3.5" />
               SMS
-              {!canSms && <span className="text-[10px] opacity-60 ml-1">Unlimited</span>}
+              {!lead.phone
+                ? <span className="text-[10px] opacity-60 ml-1">No phone</span>
+                : !PLANS_WITH_SMS.has(plan) && <span className="text-[10px] opacity-60 ml-1">Unlimited</span>}
             </Button>
           </div>
 
