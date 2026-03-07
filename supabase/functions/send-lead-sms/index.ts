@@ -44,17 +44,21 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "Missing auth header" }, 401);
 
-    // Use anon key + user JWT to verify identity (standard Supabase pattern)
+    // Decode JWT without a network round-trip (fast, no hanging)
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data: { user }, error: authErr } = await userClient.auth.getUser(token);
-    if (authErr || !user) return json({ error: "Unauthorized" }, 401);
+    const jwtPayload = (() => {
+      try {
+        const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        return JSON.parse(atob(b64)) as { sub?: string; exp?: number };
+      } catch { return null; }
+    })();
+    if (!jwtPayload?.sub) return json({ error: "Invalid token" }, 401);
+    if (jwtPayload.exp && jwtPayload.exp < Date.now() / 1000) {
+      return json({ error: "Session expired — please sign in again" }, 401);
+    }
+    const userId = jwtPayload.sub;
 
-    // Service-role client for DB operations that bypass RLS
+    // Service-role client for all DB operations
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -69,7 +73,7 @@ Deno.serve(async (req) => {
     const { data: sub } = await db
       .from("subscriptions")
       .select("plan")
-      .eq("company_id", user.id)
+      .eq("company_id", userId)
       .maybeSingle();
 
     if (!sub || sub.plan !== "unlimited") {
@@ -138,7 +142,7 @@ Deno.serve(async (req) => {
 
     // Log to lead_messages
     await db.from("lead_messages").insert({
-      company_id: user.id,
+      company_id: userId,
       lead_id,
       direction: "outbound",
       channel: "sms",

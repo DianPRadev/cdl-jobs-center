@@ -25,6 +25,16 @@ function uuidToHex(uuid: string): string {
   return uuid.replace(/-/g, "");
 }
 
+/** Decode JWT payload and return { sub, exp } without a network round-trip */
+function parseJwt(token: string): { sub?: string; exp?: number } | null {
+  try {
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64));
+  } catch {
+    return null;
+  }
+}
+
 async function mailgunSend(
   apiKey: string,
   domain: string,
@@ -79,17 +89,16 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "Missing auth header" }, 401);
 
-    // Use anon key + user JWT to verify identity (standard Supabase pattern)
+    // Decode JWT without a network round-trip (fast, no hanging)
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    const userClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data: { user }, error: authErr } = await userClient.auth.getUser(token);
-    if (authErr || !user) return json({ error: "Unauthorized" }, 401);
+    const payload = parseJwt(token);
+    if (!payload?.sub) return json({ error: "Invalid token" }, 401);
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      return json({ error: "Session expired — please sign in again" }, 401);
+    }
+    const userId = payload.sub;
 
-    // Service-role client for DB operations that bypass RLS
+    // Service-role client for all DB operations
     const db = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -106,7 +115,7 @@ Deno.serve(async (req) => {
     const { data: sub } = await db
       .from("subscriptions")
       .select("plan")
-      .eq("company_id", user.id)
+      .eq("company_id", userId)
       .maybeSingle();
 
     if (!sub || !PLANS_WITH_EMAIL.has(sub.plan)) {
@@ -142,7 +151,7 @@ Deno.serve(async (req) => {
     const { data: company } = await db
       .from("company_profiles")
       .select("company_name")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
     const companyName = company?.company_name || "A CDL Employer";
 
@@ -155,7 +164,7 @@ Deno.serve(async (req) => {
     }
 
     // Encode company + lead in the reply-to so inbound routing can match them
-    const replyTo = `reply+${uuidToHex(user.id)}_${uuidToHex(lead_id)}@${domain}`;
+    const replyTo = `reply+${uuidToHex(userId)}_${uuidToHex(lead_id)}@${domain}`;
 
     const mgId = await mailgunSend(
       apiKey, domain,
@@ -168,7 +177,7 @@ Deno.serve(async (req) => {
 
     // Log to lead_messages
     await db.from("lead_messages").insert({
-      company_id: user.id,
+      company_id: userId,
       lead_id,
       direction: "outbound",
       channel: "email",
