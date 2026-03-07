@@ -71,7 +71,7 @@ const Pricing = () => {
       const res = await fetch(fnUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, return_origin: window.location.origin }),
         signal: controller.signal,
       });
       clearTimeout(timeout);

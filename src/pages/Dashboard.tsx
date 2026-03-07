@@ -1006,7 +1006,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, return_origin: window.location.origin }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -3140,6 +3140,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
                             "Content-Type": "application/json",
                             Authorization: `Bearer ${session.access_token}`,
                           },
+                          body: JSON.stringify({ return_origin: window.location.origin }),
                           signal: controller.signal,
                         });
                         clearTimeout(timeout);

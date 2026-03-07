@@ -117,6 +117,7 @@ export function useCancelSubscription() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
+          body: JSON.stringify({ return_origin: window.location.origin }),
           signal: controller.signal,
         });
       } catch (err) {

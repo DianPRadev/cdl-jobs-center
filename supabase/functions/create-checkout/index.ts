@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     };
 
     // Parse request body — only accept plan name, derive priceId server-side
-    const { plan } = await req.json();
+    const { plan, return_origin } = await req.json();
     if (!plan || !ALLOWED_PLANS[plan]) {
       return new Response(
         JSON.stringify({ error: "Invalid plan. Allowed: starter, growth, unlimited" }),
@@ -130,8 +130,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Only allow redirects to trusted origins.
-    const origin = resolveAllowedOrigin(req);
+    // Resolve the origin to use for redirect URLs.
+    // Prefer return_origin sent by the client (validated against allowlist) so
+    // Stripe always sends the user back to the exact domain they came from,
+    // even when origin header is absent or the domain has www/non-www variants.
+    let origin = DEFAULT_ORIGIN;
+    if (return_origin) {
+      try {
+        const normalized = new URL(return_origin as string).origin;
+        origin = allowedOrigins.includes(normalized) ? normalized : DEFAULT_ORIGIN;
+      } catch {
+        origin = resolveAllowedOrigin(req);
+      }
+    } else {
+      origin = resolveAllowedOrigin(req);
+    }
 
     // Create Checkout Session
     const session = await stripe.checkout.sessions.create({

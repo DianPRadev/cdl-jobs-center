@@ -98,7 +98,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const origin = resolveAllowedOrigin(req);
+    const body = await req.json().catch(() => ({})) as { return_origin?: string };
+    let origin = DEFAULT_ORIGIN;
+    if (body.return_origin) {
+      try {
+        const normalized = new URL(body.return_origin).origin;
+        origin = allowedOrigins.includes(normalized) ? normalized : DEFAULT_ORIGIN;
+      } catch {
+        origin = resolveAllowedOrigin(req);
+      }
+    } else {
+      origin = resolveAllowedOrigin(req);
+    }
 
     // Create Customer Portal session
     const session = await stripe.billingPortal.sessions.create({
