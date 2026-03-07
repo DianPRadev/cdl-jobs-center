@@ -221,6 +221,7 @@ function AdminDashboardInner() {
   const [verificationSearch, setVerificationSearch] = useState("");
   const [declineDialogCompany, setDeclineDialogCompany] = useState<{ id: string; name: string } | null>(null);
   const [declineReasonText, setDeclineReasonText] = useState("");
+  const [banReapplyCheck, setBanReapplyCheck] = useState(false);
   const declineCompany = useDeclineCompany();
   const pendingVerifications = verificationRequests.filter((r) => r.status === "pending");
 
@@ -232,7 +233,7 @@ function AdminDashboardInner() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("company_profiles")
-        .select("id, company_name, phone, email, address, website, created_at, decline_reason")
+        .select("id, company_name, phone, email, address, website, created_at, decline_reason, reapply_note, reapply_doc_paths")
         .or("is_verified.is.null,is_verified.eq.false")
         .is("decline_reason", null)
         .order("created_at", { ascending: false });
@@ -1608,47 +1609,68 @@ function AdminDashboardInner() {
               ) : (
                 <div className="divide-y divide-border">
                   {filteredUnverified.map((c) => (
-                    <div key={c.id} className="px-5 py-4 flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{c.company_name || "Unnamed Company"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {c.email}{c.phone ? ` · ${c.phone}` : ""}{c.created_at ? ` · Registered ${formatDate(c.created_at)}` : ""}
-                        </p>
-                        {c.address && <p className="text-xs text-muted-foreground mt-0.5">{c.address}</p>}
-                        {c.website && <p className="text-xs text-primary mt-0.5">{c.website}</p>}
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button
-                          size="sm"
-                          disabled={toggleVerified.isPending}
-                          onClick={() => {
-                            toggleVerified.mutate({ companyId: c.id, verified: true }, {
-                              onSuccess: () => {
-                                toast.success(`${c.company_name || "Company"} approved!`);
-                              },
-                              onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to approve."),
-                            });
-                          }}
-                        >
-                          <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                          onClick={() => { setDeclineDialogCompany({ id: c.id, name: c.company_name || "This company" }); setDeclineReasonText(""); }}
-                        >
-                          <XCircle className="h-3.5 w-3.5 mr-1.5" />
-                          Decline
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => navigate(`/admin?tab=users&search=${encodeURIComponent(c.company_name || c.email || "")}`)}
-                        >
-                          View Profile
-                        </Button>
+                    <div key={c.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm">{c.company_name || "Unnamed Company"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.email}{c.phone ? ` · ${c.phone}` : ""}{c.created_at ? ` · Registered ${formatDate(c.created_at)}` : ""}
+                          </p>
+                          {c.address && <p className="text-xs text-muted-foreground mt-0.5">{c.address}</p>}
+                          {c.website && <p className="text-xs text-primary mt-0.5">{c.website}</p>}
+                          {c.reapply_note && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 italic">
+                              Re-review note: {c.reapply_note}
+                            </p>
+                          )}
+                          {(c.reapply_doc_paths?.length ?? 0) > 0 && (
+                            <button
+                              className="text-xs text-primary underline mt-0.5 text-left"
+                              onClick={async () => {
+                                for (const path of c.reapply_doc_paths!) {
+                                  const { data } = await supabase.storage.from("reapply-docs").createSignedUrl(path, 3600);
+                                  if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                                }
+                              }}
+                            >
+                              <FileText className="h-3 w-3 inline mr-0.5" />
+                              View {c.reapply_doc_paths!.length} attached document{c.reapply_doc_paths!.length > 1 ? "s" : ""}
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            disabled={toggleVerified.isPending}
+                            onClick={() => {
+                              toggleVerified.mutate({ companyId: c.id, verified: true }, {
+                                onSuccess: () => {
+                                  toast.success(`${c.company_name || "Company"} approved!`);
+                                },
+                                onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to approve."),
+                              });
+                            }}
+                          >
+                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                            onClick={() => { setDeclineDialogCompany({ id: c.id, name: c.company_name || "This company" }); setDeclineReasonText(""); setBanReapplyCheck(false); }}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                            Decline
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/admin?tab=users&search=${encodeURIComponent(c.company_name || c.email || "")}`)}
+                          >
+                            View Profile
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1793,15 +1815,28 @@ function AdminDashboardInner() {
                 Provide a reason for declining <strong>{declineDialogCompany?.name}</strong>. They will see this message on their dashboard.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-1.5 py-2">
-              <Label htmlFor="decline-reason">Reason</Label>
-              <Textarea
-                id="decline-reason"
-                placeholder="e.g. Could not verify business registration..."
-                rows={3}
-                value={declineReasonText}
-                onChange={(e) => setDeclineReasonText(e.target.value)}
-              />
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="decline-reason">Reason</Label>
+                <Textarea
+                  id="decline-reason"
+                  placeholder="e.g. Could not verify business registration..."
+                  rows={3}
+                  value={declineReasonText}
+                  onChange={(e) => setDeclineReasonText(e.target.value)}
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={banReapplyCheck}
+                  onChange={(e) => setBanReapplyCheck(e.target.checked)}
+                  className="h-4 w-4 accent-destructive"
+                />
+                <span className="text-sm text-muted-foreground">
+                  Prevent this company from requesting re-review
+                </span>
+              </label>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeclineDialogCompany(null)}>Cancel</Button>
@@ -1811,7 +1846,7 @@ function AdminDashboardInner() {
                 onClick={() => {
                   if (!declineDialogCompany) return;
                   declineCompany.mutate(
-                    { companyId: declineDialogCompany.id, reason: declineReasonText.trim() },
+                    { companyId: declineDialogCompany.id, reason: declineReasonText.trim(), banReapply: banReapplyCheck },
                     {
                       onSuccess: () => {
                         toast.success(`${declineDialogCompany.name} has been declined.`);

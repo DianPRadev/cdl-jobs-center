@@ -1156,7 +1156,11 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
   const [contactTitle, setContactTitle] = useState("");
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
   const [declineReason, setDeclineReason] = useState<string | null>(null);
+  const [reapplyBanned, setReapplyBanned] = useState(false);
   const [reapplyPending, setReapplyPending] = useState(false);
+  const [reapplyNote, setReapplyNote] = useState("");
+  const [reapplyFiles, setReapplyFiles] = useState<File[]>([]);
+  const [reapplyError, setReapplyError] = useState("");
   const [verifiedBannerHidden, setVerifiedBannerHidden] = useState(() => localStorage.getItem("verified-banner-dismissed") === "1");
   const [companyGoal, setCompanyGoal] = useState("");
   const [profileSaveStatus, setProfileSaveStatus] = useState<SaveStatus>("idle");
@@ -1248,6 +1252,7 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
         setCompanyGoal(loadedProfile.companyGoal);
         setIsVerified(data?.is_verified ?? false);
         setDeclineReason(data?.decline_reason ?? null);
+        setReapplyBanned(data?.reapply_banned ?? false);
         setLastSavedSnapshot(snapshotCompanyProfile(loadedProfile));
       })
       .catch((err: unknown) => { console.error("Failed to load company profile:", err); });
@@ -1516,27 +1521,103 @@ const DashboardInner = ({ user }: { user: AuthUser }) => {
               <p className="font-medium mb-1">Reason:</p>
               <p className="text-muted-foreground">{declineReason}</p>
             </div>
-            <Button
-              className="mb-4"
-              disabled={reapplyPending}
-              onClick={async () => {
-                setReapplyPending(true);
-                const { error } = await supabase
-                  .from("company_profiles")
-                  .update({ decline_reason: null })
-                  .eq("id", user!.id);
-                setReapplyPending(false);
-                if (error) {
-                  toast.error("Failed to submit re-review request. Please try again.");
-                } else {
-                  setDeclineReason(null);
-                  toast.success("Re-review request submitted. Our team will review your account.");
-                }
-              }}
-            >
-              {reapplyPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              Request Re-review
-            </Button>
+            {reapplyBanned ? (
+              <p className="text-sm text-muted-foreground mb-4 max-w-md">
+                Re-review requests are disabled for this account. Please contact support for assistance.
+              </p>
+            ) : (
+              <div className="w-full max-w-md mb-4 space-y-3 text-left">
+                <p className="text-sm font-medium text-center">Request Re-review</p>
+                <textarea
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  placeholder="Optional: explain what has changed or provide additional context..."
+                  rows={3}
+                  value={reapplyNote}
+                  onChange={(e) => setReapplyNote(e.target.value)}
+                />
+                <div>
+                  <input
+                    type="file"
+                    multiple
+                    id="reapply-file-input"
+                    className="hidden"
+                    accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.files ?? []);
+                      const ALLOWED = ["image/jpeg","image/png","image/gif","image/webp","application/pdf","text/plain"];
+                      const invalid = selected.filter(f => !ALLOWED.includes(f.type));
+                      if (invalid.length) { setReapplyError("Unsupported file type. Allowed: images, PDF, plain text."); e.target.value = ""; return; }
+                      const tooBig = selected.filter(f => f.size > 10 * 1024 * 1024);
+                      if (tooBig.length) { setReapplyError("Each file must be under 10 MB."); e.target.value = ""; return; }
+                      const combined = [...reapplyFiles, ...selected];
+                      if (combined.length > 5) { setReapplyError("Maximum 5 files allowed."); e.target.value = ""; return; }
+                      setReapplyError("");
+                      setReapplyFiles(combined);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById("reapply-file-input")?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1.5" />
+                    Attach Supporting Documents
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-1">Images, PDF, TXT · max 10 MB each · up to 5 files</p>
+                </div>
+                {reapplyError && <p className="text-xs text-destructive">{reapplyError}</p>}
+                {reapplyFiles.length > 0 && (
+                  <ul className="space-y-1">
+                    {reapplyFiles.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between text-xs bg-muted rounded px-2 py-1">
+                        <span className="truncate">{f.name} <span className="text-muted-foreground">({(f.size / 1024 / 1024).toFixed(1)} MB)</span></span>
+                        <button
+                          onClick={() => setReapplyFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="ml-2 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button
+                  className="w-full"
+                  disabled={reapplyPending}
+                  onClick={async () => {
+                    setReapplyPending(true);
+                    try {
+                      const paths: string[] = [];
+                      for (const file of reapplyFiles) {
+                        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
+                        const path = `${user!.id}/${Date.now()}-${safeName}`;
+                        const { error: uploadErr } = await supabase.storage.from("reapply-docs").upload(path, file, { upsert: false });
+                        if (uploadErr) throw uploadErr;
+                        paths.push(path);
+                      }
+                      const { error } = await supabase
+                        .from("company_profiles")
+                        .update({ decline_reason: null, reapply_note: reapplyNote.trim() || null, reapply_doc_paths: paths })
+                        .eq("id", user!.id);
+                      if (error) throw error;
+                      setDeclineReason(null);
+                      setReapplyNote("");
+                      setReapplyFiles([]);
+                      toast.success("Re-review request submitted. Our team will be in touch.");
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed to submit. Please try again.");
+                    } finally {
+                      setReapplyPending(false);
+                    }
+                  }}
+                >
+                  {reapplyPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Submit Re-review Request
+                </Button>
+              </div>
+            )}
             <p className="text-sm text-muted-foreground">
               Questions? Contact us at{" "}
               <a href="mailto:support@cdljobscenter.com" className="text-primary underline">

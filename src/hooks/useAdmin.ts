@@ -628,10 +628,13 @@ export function useToggleCompanyVerified() {
 export function useDeclineCompany() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { companyId: string; reason: string }) => {
+    mutationFn: async (params: { companyId: string; reason: string; banReapply?: boolean }) => {
       const { error } = await withTimeout(supabase
         .from("company_profiles")
-        .update({ decline_reason: params.reason })
+        .update({
+          decline_reason: params.reason,
+          ...(params.banReapply ? { reapply_banned: true } : {}),
+        })
         .eq("id", params.companyId), 15_000);
       if (error) throw error;
     },
