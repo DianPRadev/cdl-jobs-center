@@ -260,6 +260,7 @@ function AdminDashboardInner() {
   const [leadSearch, setLeadSearch] = useState("");
   const [leadTypeFilter, setLeadTypeFilter] = useState<"all" | "owner_operator" | "company_driver">("all");
   const [leadStatusFilter, setLeadStatusFilter] = useState<"all" | "new" | "contacted" | "hired" | "dismissed">("all");
+  const [leadCompanyFilter, setLeadCompanyFilter] = useState<string>("all");
 
   /* applications tab state */
   const [appPage, setAppPage] = useState(0);
@@ -1148,7 +1149,25 @@ function AdminDashboardInner() {
         {/* ── TAB: Leads ─────────────────────────────────────────────── */}
         {activeTab === "leads" &&
           (() => {
+            // Build company name map from users
+            const companyNameMap = new Map<string, string>();
+            for (const u of users) {
+              if (u.role === "company" && u.companyName) {
+                companyNameMap.set(u.id, u.companyName);
+              }
+            }
+            // Unique company IDs in leads for the filter dropdown
+            const leadCompanyIds = [...new Set(leads.map((l) => l.companyId).filter(Boolean))] as string[];
+            const companyOptions = leadCompanyIds
+              .map((cid) => ({ id: cid, name: companyNameMap.get(cid) || cid.slice(0, 8) }))
+              .sort((a, b) => a.name.localeCompare(b.name));
+
             const filteredLeads = leads.filter((l) => {
+              if (leadCompanyFilter !== "all") {
+                if (leadCompanyFilter === "unassigned") {
+                  if (l.companyId) return false;
+                } else if (l.companyId !== leadCompanyFilter) return false;
+              }
               if (leadTypeFilter !== "all" && l.leadType !== leadTypeFilter) return false;
               if (leadStatusFilter !== "all" && l.status !== leadStatusFilter) return false;
               if (leadSearch.trim()) {
@@ -1160,6 +1179,13 @@ function AdminDashboardInner() {
                 if (!matchesName && !matchesPhone && !matchesEmail && !matchesState) return false;
               }
               return true;
+            }).sort((a, b) => {
+              // Sort by company (assigned first), then owner ops first, then newest
+              const aCo = a.companyId ? companyNameMap.get(a.companyId) ?? "" : "zzz";
+              const bCo = b.companyId ? companyNameMap.get(b.companyId) ?? "" : "zzz";
+              if (aCo !== bCo) return aCo.localeCompare(bCo);
+              if (a.leadType !== b.leadType) return a.leadType === "owner_operator" ? -1 : 1;
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
             });
             const pageLeads = filteredLeads.slice(
               leadPage * PAGE_SIZE,
@@ -1227,6 +1253,22 @@ function AdminDashboardInner() {
                         />
                       </div>
                     </div>
+                    {/* Company */}
+                    <div className="w-full sm:w-52 space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Company</label>
+                      <Select value={leadCompanyFilter} onValueChange={(v) => { setLeadCompanyFilter(v); setLeadPage(0); }}>
+                        <SelectTrigger className="h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All companies</SelectItem>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {companyOptions.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {/* Type */}
                     <div className="w-full sm:w-44 space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">Type</label>
@@ -1282,6 +1324,11 @@ function AdminDashboardInner() {
                             <span className={`text-xs px-1.5 py-0.5 font-medium rounded-full ${LEAD_STATUS_BADGE[lead.status] ?? ""}`}>
                               {lead.status}
                             </span>
+                            {lead.companyId && (
+                              <span className="text-xs px-1.5 py-0.5 font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                {companyNameMap.get(lead.companyId) ?? "Company"}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap mt-1">
                             {lead.phone && (

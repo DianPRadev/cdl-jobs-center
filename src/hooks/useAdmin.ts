@@ -46,6 +46,7 @@ export interface AdminJob {
 export interface AdminLead {
   id: string;
   source: string;
+  companyId: string | null;
   fullName: string;
   phone: string | null;
   email: string | null;
@@ -102,6 +103,7 @@ function rowToAdminLead(row: Record<string, any>): AdminLead {
   return {
     id: row.id,
     source: row.source ?? "facebook",
+    companyId: row.company_id ?? null,
     fullName: row.full_name,
     phone: row.phone ?? null,
     email: row.email ?? null,
