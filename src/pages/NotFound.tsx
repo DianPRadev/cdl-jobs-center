@@ -2,10 +2,11 @@ import { Link } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 
 const NotFound = () => {
   usePageTitle("Page Not Found");
+  useNoIndex();
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />

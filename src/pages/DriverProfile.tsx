@@ -1,6 +1,6 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useNoIndex } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageBreadcrumb } from "@/components/ui/PageBreadcrumb";
@@ -92,6 +92,7 @@ const DriverProfile = () => {
   });
 
   usePageTitle(driver?.name ?? "Driver Profile");
+  useNoIndex();
 
   if (!user || (user.role !== "company" && user.role !== "admin")) {
     return (

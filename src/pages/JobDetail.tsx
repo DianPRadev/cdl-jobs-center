@@ -35,18 +35,31 @@ const JobDetail = () => {
   // Inject JobPosting structured data for SEO
   useEffect(() => {
     if (!job) return;
+    const datePosted = job.postedAt ? job.postedAt.split("T")[0] : new Date().toISOString().split("T")[0];
+    const rawRegion = job.location
+      ? (job.location.includes(",") ? job.location.split(",").pop()?.trim() : job.location.trim())
+      : undefined;
     const jsonLd = {
       "@context": "https://schema.org",
       "@type": "JobPosting",
       title: job.title,
       description: job.description,
+      datePosted,
       hiringOrganization: {
         "@type": "Organization",
         name: job.company,
         ...(job.logoUrl && { logo: job.logoUrl }),
       },
-      ...(job.location && { jobLocation: { "@type": "Place", address: job.location } }),
-      ...(job.pay && { baseSalary: { "@type": "MonetaryAmount", currency: "USD", value: { "@type": "QuantitativeValue", value: job.pay } } }),
+      ...(rawRegion && {
+        jobLocation: {
+          "@type": "Place",
+          address: {
+            "@type": "PostalAddress",
+            addressRegion: rawRegion,
+            addressCountry: "US",
+          },
+        },
+      }),
       employmentType: "FULL_TIME",
       industry: "Truck Transportation",
       directApply: true,

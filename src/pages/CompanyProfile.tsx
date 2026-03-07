@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePageTitle, useMetaDescription, useCanonical } from "@/hooks/usePageTitle";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { PageBreadcrumb } from "@/components/ui/PageBreadcrumb";
@@ -82,6 +82,12 @@ const CompanyProfile = () => {
   });
 
   usePageTitle(company?.company_name ?? "Company Profile");
+  useMetaDescription(
+    company
+      ? `${company.company_name} is a CDL trucking company${company.address ? ` based in ${company.address}` : ""}. View open jobs and apply online at CDL Jobs Center.`
+      : "CDL trucking company profile. View open jobs and apply online at CDL Jobs Center."
+  );
+  useCanonical(id ? `/companies/${id}` : "/companies");
 
   // Fetch company's active jobs
   const { data: jobs = [] } = useQuery({

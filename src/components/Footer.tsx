@@ -12,7 +12,7 @@ const Footer = () => {
 
           {/* For Drivers */}
           <div>
-            <h2 className="font-display font-semibold text-secondary-foreground mb-4 text-base">For Drivers</h2>
+            <h3 className="font-display font-semibold text-secondary-foreground mb-4 text-base">For Drivers</h3>
             <div className="flex flex-col gap-2">
               {[
                 { label: "Browse Jobs", path: "/jobs" },
@@ -31,7 +31,7 @@ const Footer = () => {
 
           {/* For Companies */}
           <div>
-            <h2 className="font-display font-semibold text-secondary-foreground mb-4 text-base">For Companies</h2>
+            <h3 className="font-display font-semibold text-secondary-foreground mb-4 text-base">For Companies</h3>
             <div className="flex flex-col gap-2">
               {[
                 { label: "Company Login", path: "/signin" },
@@ -49,12 +49,12 @@ const Footer = () => {
 
           {/* About + Follow Us */}
           <div>
-            <h2 className="font-display font-semibold text-secondary-foreground mb-4 text-base">About</h2>
+            <h3 className="font-display font-semibold text-secondary-foreground mb-4 text-base">About</h3>
             <p className="text-sm text-muted-foreground mb-4">
               CDL Job Center connects CDL drivers with top trucking companies across the United States using AI-powered matching.
             </p>
             <p className="text-xs text-muted-foreground mb-6">© {new Date().getFullYear()} CDL Job Center</p>
-            <h2 className="font-display font-semibold text-secondary-foreground mb-3 text-base">Follow Us</h2>
+            <h3 className="font-display font-semibold text-secondary-foreground mb-3 text-base">Follow Us</h3>
             <div className="flex items-center gap-3">
               <a
                 href="https://www.facebook.com/profile.php?id=100087216585082"
@@ -79,7 +79,7 @@ const Footer = () => {
 
           {/* Contact Us */}
           <div>
-            <h2 className="font-display font-semibold text-secondary-foreground mb-4 text-base">Contact Us</h2>
+            <h3 className="font-display font-semibold text-secondary-foreground mb-4 text-base">Contact Us</h3>
             <div className="flex flex-col gap-3">
               <div className="flex items-start gap-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4 mt-0.5 shrink-0" />

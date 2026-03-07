@@ -14,6 +14,7 @@
     { "source": "/:path(.*)", "has": [{ "type": "host", "value": "www.cdljobscenter.com" }], "destination": "https://cdljobscenter.com/:path", "statusCode": 301 }
   ],
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

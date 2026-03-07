@@ -61,6 +61,9 @@ const TopCompanies = () => {
                   <img
                     src={company.logo_url}
                     alt={company.company_name}
+                    loading="lazy"
+                    width={64}
+                    height={64}
                     className="h-16 w-16 rounded-2xl object-cover mb-4 mx-auto sm:mx-0"
                   />
                 ) : (
