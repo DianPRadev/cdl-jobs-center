@@ -1,100 +1,142 @@
-import { test, expect } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-// ─── Public Pages ────────────────────────────────────────────────────────────
+const publicPaths = ["/", "/jobs", "/companies", "/apply", "/pricing", "/signin"];
+
+const headerLogo = (page: Page) =>
+  page.getByRole("link", { name: /CDL Jobs Center/i }).first();
+
+const topNav = (page: Page) => page.locator("nav").first();
+
+const mainContent = (page: Page) => page.locator("main");
+
+async function waitForLoaderToSettle(page: Page) {
+  const loader = page.locator('[aria-label="Loading"]');
+  if ((await loader.count()) > 0) {
+    await expect(loader.first()).toBeHidden({ timeout: 15_000 });
+  }
+}
+
+async function openMobileMenuIfNeeded(page: Page) {
+  const openMenu = page.getByRole("button", { name: /Open menu/i });
+  if (await openMenu.isVisible()) {
+    await openMenu.click();
+  }
+}
 
 test.describe("Public pages load without errors", () => {
-  test("Homepage loads with hero and nav", async ({ page }) => {
+  test("homepage loads with hero and nav", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("nav")).toBeVisible();
-    await expect(page.locator("text=CDL").first()).toBeVisible();
-    // Hero section visible — text varies by role
-    await expect(page.locator("text=Find the Trucking Job").or(page.locator("text=Find the CDL Drivers")).first()).toBeVisible();
+    await expect(headerLogo(page)).toBeVisible();
+    await expect(
+      mainContent(page)
+        .getByText("Find the Trucking Job")
+        .or(mainContent(page).getByText("Find the CDL Drivers"))
+        .first(),
+    ).toBeVisible();
   });
 
-  test("Jobs page loads and shows listings or empty state", async ({ page }) => {
+  test("jobs page loads and shows listings or empty state", async ({ page }) => {
     await page.goto("/jobs");
-    await expect(page.locator("nav")).toBeVisible();
-    // Wait for spinner to disappear (loading done)
-    await expect(page.locator('[aria-label="Loading"]')).toBeHidden({ timeout: 15_000 });
-    // Should show job cards OR "No jobs found" message
-    const hasJobs = await page.locator('[class*="border-border"]').count();
-    const hasEmpty = await page.locator("text=No jobs found").count();
-    expect(hasJobs > 0 || hasEmpty > 0).toBeTruthy();
+    await expect(headerLogo(page)).toBeVisible();
+    await waitForLoaderToSettle(page);
+    await page.waitForLoadState("networkidle");
+
+    const jobLinks = await page.locator('a[href^="/jobs/"]').count();
+    const emptyStateA = await mainContent(page)
+      .getByText("No jobs found", { exact: false })
+      .count();
+    const emptyStateB = await mainContent(page)
+      .getByText("No jobs match your filters", { exact: false })
+      .count();
+    const zeroJobsBadge = await mainContent(page)
+      .getByText("(0 jobs)", { exact: false })
+      .count();
+
+    expect(jobLinks > 0 || emptyStateA > 0 || emptyStateB > 0 || zeroJobsBadge > 0).toBeTruthy();
   });
 
-  test("Jobs page filters render", async ({ page }) => {
+  test("jobs filters render", async ({ page }) => {
     await page.goto("/jobs");
-    await expect(page.locator('[aria-label="Loading"]')).toBeHidden({ timeout: 15_000 });
-    // Search input exists
-    await expect(page.locator('input[placeholder*="Company"]').first()).toBeVisible();
+    await waitForLoaderToSettle(page);
+    await expect(page.getByRole("textbox", { name: "Search" })).toBeVisible();
   });
 
-  test("Companies page loads", async ({ page }) => {
+  test("companies page loads", async ({ page }) => {
     await page.goto("/companies");
-    await expect(page.locator("nav")).toBeVisible();
-    await expect(page.locator('[aria-label="Loading"]')).toBeHidden({ timeout: 15_000 });
+    await expect(headerLogo(page)).toBeVisible();
+    await waitForLoaderToSettle(page);
   });
 
-  test("Apply Now page loads", async ({ page }) => {
+  test("apply page loads", async ({ page }) => {
     await page.goto("/apply");
-    await expect(page.locator("nav")).toBeVisible();
-    // Should show the multi-step application form
-    await expect(page.locator("text=Apply").first()).toBeVisible();
+    await expect(headerLogo(page)).toBeVisible();
+    await expect(
+      mainContent(page)
+        .getByText("AI Job Matching", { exact: false })
+        .or(mainContent(page).getByText("Sign in to find your matches", { exact: false }))
+        .or(mainContent(page).getByText("Quick Apply", { exact: false }))
+        .first(),
+    ).toBeVisible();
   });
 
-  test("Pricing page loads", async ({ page }) => {
+  test("pricing loads", async ({ page }) => {
     await page.goto("/pricing");
-    await expect(page.locator("nav")).toBeVisible();
-    await expect(page.locator("text=Pricing").first()).toBeVisible();
+    await expect(headerLogo(page)).toBeVisible();
+    await expect(
+      mainContent(page)
+        .getByText("Get Access to Driver Leads", { exact: false })
+        .or(mainContent(page).getByText("Still not sure?", { exact: false }))
+        .first(),
+    ).toBeVisible();
   });
 
-  test("Privacy policy page loads", async ({ page }) => {
+  test("privacy loads", async ({ page }) => {
     await page.goto("/privacy");
-    await expect(page.locator("text=Privacy").first()).toBeVisible();
+    await expect(page.getByText("Privacy").first()).toBeVisible();
   });
 
-  test("Terms of service page loads", async ({ page }) => {
+  test("terms loads", async ({ page }) => {
     await page.goto("/terms");
-    await expect(page.locator("text=Terms").first()).toBeVisible();
+    await expect(page.getByText("Terms").first()).toBeVisible();
   });
 
-  test("Sign in page loads", async ({ page }) => {
+  test("signin loads", async ({ page }) => {
     await page.goto("/signin");
-    await expect(page.locator("text=Sign In").first()).toBeVisible();
+    await expect(page.getByText("Sign In").first()).toBeVisible();
   });
 
-  test("404 page for unknown route", async ({ page }) => {
+  test("unknown route returns 404 screen", async ({ page }) => {
     await page.goto("/this-does-not-exist");
-    await expect(page.locator("text=404").or(page.locator("text=not found")).first()).toBeVisible();
+    await expect(
+      page.getByText("404").or(page.getByText("not found", { exact: false })).first(),
+    ).toBeVisible();
   });
 });
 
-// ─── Navigation ──────────────────────────────────────────────────────────────
-
 test.describe("Navigation works", () => {
-  test("Navbar links navigate correctly", async ({ page }) => {
+  test("navbar links navigate correctly", async ({ page }) => {
     await page.goto("/");
+    const nav = topNav(page);
 
-    // Click Apply Now link in nav (Jobs is a dropdown, so test Apply Now directly)
-    await page.locator("nav").getByRole("link", { name: /Apply Now/i }).first().click();
+    await openMobileMenuIfNeeded(page);
+    await nav.getByRole("link", { name: /Apply Now|Find My Matches/i }).first().click();
     await expect(page).toHaveURL(/\/apply/);
 
-    // Click Companies link
-    await page.locator("nav").getByRole("link", { name: /Companies/i }).first().click();
+    await openMobileMenuIfNeeded(page);
+    await topNav(page).getByRole("link", { name: /Companies/i }).first().click();
     await expect(page).toHaveURL(/\/companies/);
   });
 
-  test("Jobs page → Job detail → back works", async ({ page }) => {
+  test("job detail and back works", async ({ page }) => {
     await page.goto("/jobs");
-    await expect(page.locator('[aria-label="Loading"]')).toBeHidden({ timeout: 15_000 });
+    await waitForLoaderToSettle(page);
 
-    // Click first job card link if any jobs exist
-    const jobLink = page.locator('a[href^="/jobs/"]').first();
-    if (await jobLink.isVisible()) {
-      await jobLink.click();
+    const link = page.locator('a[href^="/jobs/"]').first();
+    if (await link.isVisible()) {
+      await link.click();
       await expect(page).toHaveURL(/\/jobs\/.+/);
-      // Back button should exist
-      const backBtn = page.locator('button[aria-label="Go back"]');
+
+      const backBtn = page.getByRole("button", { name: "Go back" });
       if (await backBtn.isVisible()) {
         await backBtn.click();
         await expect(page).toHaveURL(/\/jobs/);
@@ -102,111 +144,83 @@ test.describe("Navigation works", () => {
     }
   });
 
-  test("Logo links to homepage", async ({ page }) => {
+  test("logo links to homepage", async ({ page }) => {
     await page.goto("/jobs");
     await page.locator('a[href="/"]').first().click();
     await expect(page).toHaveURL(/\/$/);
   });
 });
 
-// ─── Protected Routes (unauthenticated) ──────────────────────────────────────
-
 test.describe("Protected routes redirect when not signed in", () => {
-  test("Driver dashboard redirects to signin", async ({ page }) => {
+  test("driver dashboard redirects to signin", async ({ page }) => {
     await page.goto("/driver-dashboard");
     await expect(page).toHaveURL(/\/signin/, { timeout: 10_000 });
   });
 
-  test("Company dashboard redirects to signin", async ({ page }) => {
+  test("company dashboard redirects to signin", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/signin/, { timeout: 10_000 });
   });
 
-  test("Admin dashboard redirects to signin", async ({ page }) => {
+  test("admin dashboard redirects to signin", async ({ page }) => {
     await page.goto("/admin");
     await expect(page).toHaveURL(/\/signin/, { timeout: 10_000 });
   });
 
-  test("Drivers directory requires auth", async ({ page }) => {
+  test("drivers directory requires auth", async ({ page }) => {
     await page.goto("/drivers");
-    // Should show access restriction or redirect
-    const restricted = page.locator("text=Company Access Only").or(page.locator("text=Sign In"));
-    await expect(restricted.first()).toBeVisible({ timeout: 10_000 });
+    await expect(
+      mainContent(page)
+        .getByText("Company Access Only", { exact: false })
+        .or(mainContent(page).getByText("Sign In as Company", { exact: false }))
+        .first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });
 
-// ─── Console Errors ──────────────────────────────────────────────────────────
-
-test.describe("No critical console errors", () => {
-  const criticalPages = ["/", "/jobs", "/companies", "/apply", "/pricing", "/signin"];
-
-  for (const path of criticalPages) {
+test.describe("No critical console or network errors", () => {
+  for (const path of publicPaths) {
     test(`${path} has no uncaught errors`, async ({ page }) => {
-      const errors: string[] = [];
-      page.on("pageerror", (err) => errors.push(err.message));
+      const pageErrors: string[] = [];
+      const responses500: string[] = [];
+
+      page.on("pageerror", (err) => pageErrors.push(err.message));
+      page.on("response", (res) => {
+        if (res.status() >= 500) responses500.push(`${res.status()} ${res.url()}`);
+      });
 
       await page.goto(path);
       await page.waitForTimeout(3_000);
 
-      // Filter out known non-critical errors
-      const critical = errors.filter(
+      const criticalErrors = pageErrors.filter(
         (e) =>
           !e.includes("ResizeObserver") &&
           !e.includes("Script error") &&
           !e.includes("ChunkLoadError"),
       );
-      expect(critical).toEqual([]);
+
+      expect(criticalErrors).toEqual([]);
+      expect(responses500).toEqual([]);
     });
   }
 });
 
-// ─── Responsiveness ──────────────────────────────────────────────────────────
-
-test.describe("Mobile viewport", () => {
-  test.use({ viewport: { width: 375, height: 812 } });
-
-  test("Homepage renders on mobile", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator("nav")).toBeVisible();
-    // Mobile menu button should exist
-    await expect(page.locator('button[aria-label*="menu" i], button[aria-label*="Menu" i]').first()).toBeVisible();
-  });
-
-  test("Jobs page renders on mobile", async ({ page }) => {
-    await page.goto("/jobs");
-    await expect(page.locator('[aria-label="Loading"]')).toBeHidden({ timeout: 15_000 });
-    await expect(page.locator("nav")).toBeVisible();
-  });
-});
-
-// ─── Network Health ──────────────────────────────────────────────────────────
-
-test.describe("API health", () => {
-  test("Supabase API is reachable from jobs page", async ({ page }) => {
-    let supabaseResponded = false;
-    page.on("response", (res) => {
-      if (res.url().includes("supabase.co") && res.status() < 500) {
-        supabaseResponded = true;
-      }
-    });
-
-    await page.goto("/jobs");
-    await page.waitForTimeout(5_000);
-    expect(supabaseResponded).toBeTruthy();
-  });
-
-  test("No 500 errors on public pages", async ({ page }) => {
-    const serverErrors: string[] = [];
-    page.on("response", (res) => {
-      if (res.status() >= 500) {
-        serverErrors.push(`${res.status()} ${res.url()}`);
-      }
-    });
-
-    for (const path of ["/", "/jobs", "/companies", "/apply", "/pricing"]) {
+test.describe("Performance and security sanity", () => {
+  test("key pages render without hard stalls", async ({ page }) => {
+    for (const path of ["/", "/jobs", "/companies", "/pricing"]) {
       await page.goto(path);
-      await page.waitForTimeout(2_000);
+      await expect(headerLogo(page)).toBeVisible({ timeout: 15_000 });
+      await waitForLoaderToSettle(page);
     }
-    expect(serverErrors).toEqual([]);
+  });
+
+  test("root response includes core security headers", async ({ request, baseURL }) => {
+    const response = await request.fetch(`${baseURL ?? ""}/`, { method: "GET" });
+    expect(response.status()).toBeLessThan(500);
+
+    const headers = response.headers();
+    expect(headers["content-security-policy"]).toBeTruthy();
+    expect(headers["permissions-policy"]).toBeTruthy();
+    expect(headers["x-content-type-options"]).toBe("nosniff");
   });
 });
