@@ -46,7 +46,7 @@ const serviceClient: SupabaseClient | null = serviceClientReady
   : null;
 
 function uniqueEmail(prefix: string) {
-  return `qa+${prefix}-${Date.now()}@example.com`;
+  return `qa+${prefix}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}@example.com`;
 }
 
 async function clearSession(page: Page) {
